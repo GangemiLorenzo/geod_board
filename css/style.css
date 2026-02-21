@@ -594,3 +594,218 @@ body {
     font-size: 0.75rem;
     margin-bottom: 0.5rem;
 }
+
+/* Mobile Styles */
+@media (max-width: 768px) {
+    html {
+        font-size: 14px;
+    }
+    
+    .header {
+        padding: 0.75rem 1rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .title {
+        font-size: 0.75rem;
+        letter-spacing: 0.1em;
+    }
+    
+    .logo {
+        font-size: 1.2rem;
+    }
+    
+    .header-right {
+        gap: 0.75rem;
+    }
+    
+    .status-indicator {
+        font-size: 0.65rem;
+    }
+    
+    .last-update {
+        font-size: 0.65rem;
+    }
+    
+    .main {
+        padding: 1rem;
+        gap: 1.25rem;
+    }
+    
+    .card {
+        padding: 1rem;
+    }
+    
+    .card-value {
+        font-size: 1.5rem;
+    }
+    
+    .card-label {
+        font-size: 0.6rem;
+    }
+    
+    .card-change, .card-sub {
+        font-size: 0.75rem;
+    }
+    
+    .chart-section, .transactions-section, .miners-section {
+        padding: 1rem;
+    }
+    
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.5rem;
+    }
+    
+    .section-title {
+        font-size: 0.7rem;
+    }
+    
+    .timeframe-buttons {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    
+    .tf-btn, .tf-btn-cb {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.6rem;
+    }
+    
+    .chart-container {
+        height: 250px;
+    }
+    
+    .chart-container.chart-large {
+        height: 300px;
+    }
+    
+    .legend-container {
+        gap: 0.5rem;
+    }
+    
+    .legend-item {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.65rem;
+    }
+    
+    .tx-summary {
+        flex-wrap: wrap;
+        gap: 0.75rem 0.5rem;
+    }
+    
+    .tx-summary-item {
+        flex: 1 1 30%;
+        min-width: 80px;
+    }
+    
+    .tx-summary-label {
+        font-size: 0.55rem;
+    }
+    
+    .tx-summary-value {
+        font-size: 0.75rem;
+    }
+    
+    .miner-card {
+        padding: 0.75rem;
+    }
+    
+    .miner-id {
+        font-size: 0.85rem;
+    }
+    
+    .miner-location {
+        font-size: 0.65rem;
+    }
+    
+    .console-link {
+        font-size: 0.7rem;
+    }
+    
+    .footer {
+        padding: 0.75rem 1rem;
+        font-size: 0.6rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .config-error {
+        padding: 1.5rem 1rem;
+        margin: 1rem;
+    }
+    
+    .config-error h2 {
+        font-size: 1rem;
+    }
+    
+    .config-error code {
+        padding: 0.75rem;
+        font-size: 0.65rem;
+    }
+}
+
+@media (max-width: 480px) {
+    html {
+        font-size: 13px;
+    }
+    
+    .header {
+        padding: 0.5rem 0.75rem;
+    }
+    
+    .title {
+        font-size: 0.6rem;
+        letter-spacing: 0.05em;
+    }
+    
+    .header-left {
+        gap: 0.5rem;
+    }
+    
+    .main {
+        padding: 0.75rem;
+        gap: 1rem;
+    }
+    
+    .card {
+        padding: 0.75rem;
+    }
+    
+    .card-value {
+        font-size: 1.25rem;
+    }
+    
+    .chart-section, .transactions-section, .miners-section {
+        padding: 0.75rem;
+    }
+    
+    .chart-container {
+        height: 200px;
+    }
+    
+    .chart-container.chart-large {
+        height: 250px;
+    }
+    
+    .tf-btn, .tf-btn-cb {
+        padding: 0.35rem 0.5rem;
+        font-size: 0.55rem;
+    }
+    
+    .tx-summary-item {
+        flex: 1 1 45%;
+    }
+    
+    .legend-container {
+        flex-direction: column;
+    }
+    
+    .legend-item {
+        width: 100%;
+        justify-content: center;
+    }
+}
