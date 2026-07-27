@@ -106,8 +106,12 @@ const API = {
     },
 
     async getEURRate() {
-        const data = await this.fetchJSON('https://api.frankfurter.app/latest?from=USD&to=EUR');
-        return data.rates?.EUR || null;
+        try {
+            const data = await this.coinGeckoRequest('/simple/price?ids=usd-coin&vs_currencies=eur');
+            return data['usd-coin']?.eur || null;
+        } catch (e) {
+            return null;
+        }
     },
 
     async getUSDCBalance() {
