@@ -204,6 +204,14 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
+.card-eur {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    opacity: 0.6;
+    font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+}
+
 .section-header {
     display: flex;
     justify-content: space-between;

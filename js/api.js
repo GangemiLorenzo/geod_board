@@ -105,6 +105,11 @@ const API = {
         });
     },
 
+    async getEURRate() {
+        const data = await this.fetchJSON('https://open.er-api.com/v6/latest/USD');
+        return data.rates?.EUR || null;
+    },
+
     async getUSDCBalance() {
         const response = await this.heliusRpcRequest('getTokenAccountsByOwner', [
             CONFIG.wallet,
@@ -357,20 +362,23 @@ const API = {
     },
 
     async fetchAllData() {
-        const [priceData, geodBalance, usdcBalance] = await Promise.all([
+        const [priceData, geodBalance, usdcBalance, eurRate] = await Promise.all([
             this.getGEODPrice(),
             this.getGEODBalance(),
-            this.getUSDCBalance()
+            this.getUSDCBalance(),
+            this.getEURRate()
         ]);
 
         const geodValue = priceData.price && geodBalance ? priceData.price * geodBalance : 0;
+        const portfolioValue = geodValue + usdcBalance || null;
 
         return {
             price: priceData.price,
             change24h: priceData.change24h,
             geodBalance: geodBalance,
             usdcBalance: usdcBalance,
-            portfolioValue: geodValue + usdcBalance || null
+            portfolioValue: portfolioValue,
+            portfolioValueEUR: portfolioValue && eurRate ? portfolioValue * eurRate : null
         };
     }
 };
