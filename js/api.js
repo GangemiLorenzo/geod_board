@@ -106,7 +106,7 @@ const API = {
     },
 
     async getEURRate() {
-        const data = await this.fetchJSON('https://open.er-api.com/v6/latest/USD');
+        const data = await this.fetchJSON('https://api.frankfurter.app/latest?from=USD&to=EUR');
         return data.rates?.EUR || null;
     },
 
