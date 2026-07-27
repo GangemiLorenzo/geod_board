@@ -3,6 +3,7 @@ const App = {
         price: null,
         change24h: null,
         geodBalance: null,
+        usdcBalance: null,
         portfolioValue: null,
         chartDays: 90,
         datasets: {
@@ -151,6 +152,7 @@ const App = {
             this.state.price = data.price;
             this.state.change24h = data.change24h;
             this.state.geodBalance = data.geodBalance;
+            this.state.usdcBalance = data.usdcBalance;
             this.state.portfolioValue = data.portfolioValue;
 
             this.updatePriceUI();
@@ -178,6 +180,7 @@ const App = {
     updatePortfolioUI() {
         document.getElementById('portfolio-value').textContent = Utils.formatPrice(this.state.portfolioValue, 2);
         document.getElementById('geod-balance').textContent = Utils.formatNumber(this.state.geodBalance, 4) + ' GEOD';
+        document.getElementById('usdc-balance').textContent = Utils.formatNumber(this.state.usdcBalance, 2) + ' USDC';
     },
 
     initChart() {

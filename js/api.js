@@ -105,6 +105,24 @@ const API = {
         });
     },
 
+    async getUSDCBalance() {
+        const response = await this.heliusRpcRequest('getTokenAccountsByOwner', [
+            CONFIG.wallet,
+            { mint: CONFIG.usdcMint },
+            { encoding: 'jsonParsed' }
+        ]);
+
+        if (response.error) {
+            throw new Error(response.error.message);
+        }
+
+        const accounts = response.result?.value || [];
+        if (accounts.length === 0) return 0;
+
+        const balance = accounts[0].account.data.parsed.info.tokenAmount;
+        return parseFloat(balance.uiAmount || balance.amount / Math.pow(10, balance.decimals));
+    },
+
     async getGEODBalance() {
         const response = await this.heliusRpcRequest('getTokenAccountsByOwner', [
             CONFIG.wallet,
@@ -339,18 +357,20 @@ const API = {
     },
 
     async fetchAllData() {
-        const [priceData, geodBalance] = await Promise.all([
+        const [priceData, geodBalance, usdcBalance] = await Promise.all([
             this.getGEODPrice(),
-            this.getGEODBalance()
+            this.getGEODBalance(),
+            this.getUSDCBalance()
         ]);
-        
+
+        const geodValue = priceData.price && geodBalance ? priceData.price * geodBalance : 0;
+
         return {
             price: priceData.price,
             change24h: priceData.change24h,
             geodBalance: geodBalance,
-            portfolioValue: priceData.price && geodBalance 
-                ? priceData.price * geodBalance 
-                : null
+            usdcBalance: usdcBalance,
+            portfolioValue: geodValue + usdcBalance || null
         };
     }
 };
