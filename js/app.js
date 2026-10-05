@@ -149,7 +149,7 @@ const App = {
             </div>
             <div class="legend-item portfolio ${this.state.datasets.portfolio ? '' : 'disabled'}" data-dataset="portfolio">
                 <div class="legend-color"></div>
-                <span class="legend-label">VALORE PORTAFOGLIO</span>
+                <span class="legend-label">VALORE INVESTIMENTO</span>
             </div>
             <div class="legend-item rewards ${this.state.datasets.rewards ? '' : 'disabled'}" data-dataset="rewards">
                 <div class="legend-color"></div>
@@ -459,7 +459,7 @@ const App = {
                     },
                     {
                         type: 'line',
-                        label: 'Valore portafoglio',
+                        label: 'Valore investimento',
                         data: [],
                         borderColor: '#a855f7',
                         backgroundColor: 'rgba(168, 85, 247, 0.1)',
@@ -504,7 +504,7 @@ const App = {
                             label: (context) => {
                                 const v = context.parsed.y;
                                 if (context.datasetIndex === 0) return `Prezzo GEOD: ${this.symbol()}${Utils.formatNumber(v, 4)}`;
-                                if (context.datasetIndex === 1) return `Portafoglio: ${this.symbol()}${Utils.formatNumber(v, 0)}`;
+                                if (context.datasetIndex === 1) return `Investimento: ${this.symbol()}${Utils.formatNumber(v, 0)}`;
                                 return `Minati: +${Utils.formatNumber(v, 2)} GEOD`;
                             }
                         }
@@ -520,7 +520,7 @@ const App = {
                         position: 'left',
                         grid,
                         ticks: { color: '#a855f7', font: font(10), callback: usd },
-                        title: { display: true, text: 'PORTAFOGLIO', color: '#a855f7', font: font(10) }
+                        title: { display: true, text: 'INVESTIMENTO', color: '#a855f7', font: font(10) }
                     },
                     y1: {
                         type: 'linear',
@@ -659,7 +659,7 @@ const App = {
                     <div class="tx-summary-value rewards">${Utils.formatNumber(mined / days, 1)} GEOD</div>
                 </div>
                 <div class="tx-summary-item">
-                    <div class="tx-summary-label">VARIAZIONE PORTAFOGLIO</div>
+                    <div class="tx-summary-label">VARIAZIONE INVESTIMENTO</div>
                     <div class="tx-summary-value ${change >= 0 ? 'rewards' : 'negative'}">${sign}${this.money(Math.abs(change))} (${Utils.formatChange(changePct)})</div>
                 </div>
                 <div class="tx-summary-item">
