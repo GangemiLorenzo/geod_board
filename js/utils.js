@@ -56,6 +56,27 @@ const Utils = {
         return Math.floor(hours / 24) + ' giorni fa';
     },
 
+    escapeHtml(text) {
+        return String(text).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        })[c]);
+    },
+
+    // URL-safe base64 of UTF-8 JSON, used for the "c" link parameter.
+    encodeConfig(obj) {
+        const bytes = new TextEncoder().encode(JSON.stringify(obj));
+        let binary = '';
+        bytes.forEach(b => { binary += String.fromCharCode(b); });
+        return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    },
+
+    decodeConfig(text) {
+        const base64 = text.replace(/-/g, '+').replace(/_/g, '/');
+        const binary = atob(base64 + '='.repeat((4 - base64.length % 4) % 4));
+        const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+        return JSON.parse(new TextDecoder().decode(bytes));
+    },
+
     shortenAddress(address, chars = 6) {
         if (!address) return '--';
         return address.slice(0, chars) + '...' + address.slice(-chars);

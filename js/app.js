@@ -34,28 +34,43 @@ const App = {
 
     parseUrlParams() {
         const params = new URLSearchParams(window.location.search);
-        
-        const wallet = params.get('wallet');
-        const helius = params.get('helius');
-        const coingecko = params.get('coingecko');
-        
+
+        // "c" carries everything as base64-encoded JSON (see setup.html);
+        // the older wallet/helius/coingecko parameters still work on their own.
+        let settings = {};
+        if (params.get('c')) {
+            try {
+                settings = Utils.decodeConfig(params.get('c'));
+            } catch (error) {
+                this.state.configError = 'Il parametro "c" del link non è valido.';
+                return false;
+            }
+        }
+
+        const wallet = settings.wallet || params.get('wallet');
+        const helius = settings.helius || params.get('helius');
+        const coingecko = settings.coingecko || params.get('coingecko');
+
         const missing = [];
         if (!wallet) missing.push('wallet');
         if (!helius) missing.push('helius');
         if (!coingecko) missing.push('coingecko');
-        
+
         if (missing.length > 0) {
-            this.state.configError = `Parametri mancanti nel link: ${missing.join(', ')}`;
+            this.state.configError = `Dati mancanti nel link: ${missing.join(', ')}`;
             return false;
         }
-        
+
         CONFIG.wallet = wallet;
         CONFIG.heliusApiKey = helius;
         CONFIG.coingeckoApiKey = coingecko;
-        
+        CONFIG.polygon.wallet = (settings.polygonWallet || '').toLowerCase();
+        CONFIG.miners = settings.miners || [];
+        CONFIG.investment = settings.investment || null;
+
         API.heliusRpcUrl = `https://mainnet.helius-rpc.com/?api-key=${CONFIG.heliusApiKey}`;
         API.heliusApiUrl = `https://api.helius.xyz/v0/addresses/${CONFIG.wallet}/transactions?api-key=${CONFIG.heliusApiKey}`;
-        
+
         return true;
     },
 
@@ -65,15 +80,24 @@ const App = {
             <div class="config-error">
                 <h2>⚠ Configurazione richiesta</h2>
                 <p>${this.state.configError}</p>
-                <p class="config-help">Aggiungi questi parametri al link:</p>
-                <code>?wallet=YOUR_WALLET&helius=YOUR_HELIUS_KEY&coingecko=YOUR_COINGECKO_KEY</code>
-                <div class="config-example">
-                    <p>Esempio:</p>
-                    <code>?wallet=3RZWX21zh9ez3WgHDVX9FbhCv6eUmSsfo6heTegWT6HJ&helius=fb0bd728-xxxx&coingecko=CG-xxxx</code>
-                </div>
+                <p class="config-help">Crea il link con la pagina di configurazione:</p>
+                <code><a href="setup.html">setup.html</a></code>
             </div>
         `;
         this.setStatus('error', 'ERRORE CONFIG');
+    },
+
+    renderMiners() {
+        const section = document.getElementById('miners-section');
+        if (CONFIG.miners.length === 0) {
+            section.hidden = true;
+            return;
+        }
+        document.getElementById('miners-grid').innerHTML = CONFIG.miners.map(m => `
+            <div class="miner-card">
+                <div class="miner-id">${Utils.escapeHtml(m.id)}</div>
+                <div class="miner-location">📍 ${Utils.escapeHtml(m.location || '')}</div>
+            </div>`).join('');
     },
 
     async init() {
@@ -82,6 +106,9 @@ const App = {
             return;
         }
         
+        this.renderMiners();
+        document.getElementById('investment-grid').hidden = !CONFIG.investment;
+        document.getElementById('investment-note').hidden = !CONFIG.investment;
         this.bindEvents();
         this.initChart();
         this.renderLegend();
@@ -210,30 +237,33 @@ const App = {
 
     // Each deposit's dollar amount belongs to the partners in its own split;
     // the rest of today's value (the GEOD side) is shared equally.
-    updateOwnershipUI(worth, minersUSD) {
-        const partners = CONFIG.investment.partners || [];
+    updateOwnershipUI(worth) {
+        const partners = (CONFIG.investment.partners || []).map(Utils.escapeHtml);
         if (partners.length === 0) return;
 
         const deposits = CONFIG.investment.deposits || [];
+        const esc = Utils.escapeHtml;
         const depositTotal = deposits.reduce((sum, d) => sum + d.amountUSD, 0);
         const geodSide = Math.max(worth - depositTotal, 0);
         const usd = (v) => '$' + Utils.formatNumber(v, 0);
 
+        const rawNames = CONFIG.investment.partners || [];
+        const splitOf = (d, escapedName) => d.split?.[rawNames[partners.indexOf(escapedName)]] || 0;
         const rows = partners.map(name => {
             const geodShare = geodSide / partners.length;
-            const depositShares = deposits.map(d => d.amountUSD * (d.split?.[name] || 0) / 100);
+            const depositShares = deposits.map(d => d.amountUSD * (splitOf(d, name)) / 100);
             const total = geodShare + depositShares.reduce((sum, v) => sum + v, 0);
             return { name, geodShare, depositShares, total };
         });
 
-        const pct = (d, name) => d.split?.[name] ? ` <span class="ownership-pct">(${d.split[name]}%)</span>` : '';
+        const pct = (d, name) => splitOf(d, name) ? ` <span class="ownership-pct">(${splitOf(d, name)}%)</span>` : '';
         document.getElementById('ownership-table').innerHTML = `
             <table>
                 <thead>
                     <tr>
                         <th></th>
                         <th>GEOD <span class="ownership-pct">(1/${partners.length})</span></th>
-                        ${deposits.map(d => `<th>USD <span class="ownership-pct">(da ${d.source})</span></th>`).join('')}
+                        ${deposits.map(d => `<th>USD <span class="ownership-pct">(da ${esc(d.source || d.label)})</span></th>`).join('')}
                         <th>TOTALE OGGI</th>
                     </tr>
                 </thead>
@@ -249,7 +279,7 @@ const App = {
             </table>`;
 
         document.getElementById('ownership-note').textContent =
-            deposits.map(d => `I ${usd(d.amountUSD)} arrivati dai profitti ${d.source} (ora in USDC nel wallet) sono divisi ` +
+            deposits.map(d => `I ${usd(d.amountUSD)} arrivati da ${d.source || d.label} (ora in USDC nel wallet) sono divisi ` +
                 Object.entries(d.split || {}).map(([n, p]) => `${n} ${p}%`).join(', ') + '. ').join('') +
             `Il resto del valore di oggi (${usd(geodSide)}) è diviso in parti uguali.`;
         document.getElementById('ownership-card').hidden = false;
@@ -274,6 +304,21 @@ const App = {
     },
 
     updateInvestmentUI() {
+        this.updateHeadline();
+
+        if (this.state.mined && this.state.price) {
+            const since = new Date(this.state.minedSince * 1000)
+                .toLocaleDateString('it-IT', { month: 'short', year: 'numeric' });
+            document.getElementById('investment-mined').innerHTML =
+                `Minati da ${since}: <strong>${Utils.formatNumber(this.state.mined, 0)} GEOD</strong>` +
+                ` (≈ $${Utils.formatNumber(this.state.mined * this.state.price, 0)} al prezzo di oggi)`;
+        }
+
+        // Without investment details in the link only the summary lines show.
+        document.getElementById('investment-grid').hidden = !CONFIG.investment;
+        document.getElementById('investment-note').hidden = !CONFIG.investment;
+        if (!CONFIG.investment) return;
+
         // The miners were paid in euros; convert at today's rate so the whole
         // page reads in dollars.
         const eurRate = this.state.eurRate;
@@ -286,27 +331,17 @@ const App = {
 
         document.getElementById('invested-value').textContent = invested ? usd(invested) : '--';
         document.getElementById('invested-breakdown').innerHTML = invested
-            ? [`Miner: ${usd(minersUSD)}`, ...deposits.map(d => `${d.label}: ${usd(d.amountUSD)}`)]
+            ? [`Miner: ${usd(minersUSD)}`, ...deposits.map(d => `${Utils.escapeHtml(d.label)}: ${usd(d.amountUSD)}`)]
                 .map(line => `<div>${line}</div>`).join('')
             : '';
         document.getElementById('investment-note').textContent =
-            `Miner: ${CONFIG.investment.description}, convertiti in dollari al cambio di oggi. ` +
+            `Miner: ${CONFIG.investment.description || ''}, convertiti in dollari al cambio di oggi. ` +
             deposits.map(d => `${d.label}: dollari (USDC) aggiunti da un altro wallet. `).join('') +
             `"Valore oggi" sono i GEOD e gli USDC nel wallet ai prezzi di oggi; i miner stessi non sono conteggiati.`;
 
         if (!worth || !invested) return;
 
-        this.updateHeadline();
-
-        if (this.state.mined && this.state.price) {
-            const since = new Date(this.state.minedSince * 1000)
-                .toLocaleDateString('it-IT', { month: 'short', year: 'numeric' });
-            document.getElementById('investment-mined').innerHTML =
-                `Minati da ${since}: <strong>${Utils.formatNumber(this.state.mined, 0)} GEOD</strong>` +
-                ` (≈ ${usd(this.state.mined * this.state.price)} al prezzo di oggi)`;
-        }
-
-        this.updateOwnershipUI(worth, minersUSD);
+        this.updateOwnershipUI(worth);
 
         const result = worth - invested;
         const percent = (result / invested) * 100;
@@ -563,11 +598,16 @@ const App = {
         this.state.activityLoadedAt = Date.now();
         try {
             // The Polygon history never changes, so it is only loaded once.
-            this.state.polygonActivity ??= await API.getPolygonActivity().catch(error => {
-                console.error('Polygon history unavailable:', error);
-                return null;
-            });
-            const solana = await API.getWalletActivity();
+            if (CONFIG.polygon.wallet && !this.state.polygonActivity) {
+                this.state.polygonActivity = await API.getPolygonActivity().catch(error => {
+                    console.error('Polygon history unavailable:', error);
+                    return null;
+                });
+            }
+            // When the GEOD left Polygon, used to recognise its arrival on Solana.
+            const migratedAt = Math.max(0, ...(this.state.polygonActivity || [])
+                .filter(e => e.kind === 'migrate-out').map(e => e.timestamp)) || null;
+            const solana = await API.getWalletActivity(migratedAt);
             this.state.rawEntries = [...solana, ...(this.state.polygonActivity || [])]
                 .sort((a, b) => b.timestamp - a.timestamp);
             // Small swaps for Polygon network fees are left out of the list.
@@ -657,7 +697,7 @@ const App = {
             case 'geod-out':
                 return { title: 'GEOD inviati', note: 'Trasferimento in uscita', amount: '-' + geod, sub: geodNow, dir: 'outgoing' };
             case 'deposit':
-                return { title: 'Deposito', note: entry.depositLabel, amount: '+' + usdc, sub: '', dir: 'incoming' };
+                return { title: 'Deposito', note: Utils.escapeHtml(entry.depositLabel), amount: '+' + usdc, sub: '', dir: 'incoming' };
             case 'usdc-in':
                 return { title: 'USDC ricevuti', note: 'Dollari digitali aggiunti', amount: '+' + usdc, sub: '', dir: 'incoming' };
             default:

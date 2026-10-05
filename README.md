@@ -6,11 +6,10 @@ A static web dashboard for monitoring GEOD mining operations. Features Neo-Indus
 
 - **Live GEOD Price** - Current price and 24h change from DexScreener
 - **Portfolio Value** - Total GEOD holdings with USD conversion
-- **Combined Chart** - Price index, portfolio index, and daily rewards in one view
-- **Mining Rewards** - Daily GEOD rewards with bar chart visualization
-- **Transactions** - Plain-language list of mining rewards (grouped per day), buys, sells and transfers, each linked to Solscan as proof
-- **Investment Summary** - What was paid for the miners vs. what the wallet is worth today, plus total GEOD mined
-- **Polygon History** - The old Polygon wallet's history (used until the Sep 2025 move to Solana) is snapshotted into `data/polygon-history.json` by the "Polygon snapshot" GitHub Action and shown alongside the Solana activity
+- **Chart** - Portfolio value over time with GEOD mined per day/week (optional price line)
+- **Transactions** - Plain-language list of mining rewards, buys, sells, deposits and transfers, each linked to Solscan/Polygonscan as proof
+- **Investment Summary** - Money put in vs. what the wallet is worth today, total GEOD mined, and how it is split between partners
+- **Polygon History** - An old Polygon wallet can be included; its history is read live from Blockscout's public API and cached in the browser
 - **Auto-Refresh** - Updates every 60 seconds
 
 ## Quick Start
@@ -31,16 +30,30 @@ A static web dashboard for monitoring GEOD mining operations. Features Neo-Indus
 
 ### 2. Access the Dashboard
 
-The dashboard requires URL parameters to configure your wallet and API keys:
+All settings travel in the link, so nothing personal is stored in the repo. Open `setup.html`, fill in the JSON and press "Crea link": it produces `index.html?c=...`, where `c` is the settings JSON encoded as URL-safe base64.
 
-```
-https://your-username.github.io/geod_board/?wallet=YOUR_WALLET&helius=YOUR_HELIUS_KEY&coingecko=YOUR_COINGECKO_KEY
+```json
+{
+  "wallet": "SOLANA_WALLET",
+  "helius": "HELIUS_KEY",
+  "coingecko": "COINGECKO_KEY",
+  "polygonWallet": "0x... (optional, old Polygon wallet)",
+  "miners": [{ "id": "MINER_ID", "location": "Italia" }],
+  "investment": {
+    "amountEUR": 1000,
+    "description": "2 miner (500 € + 500 €)",
+    "partners": ["Name1", "Name2"],
+    "deposits": [
+      { "label": "Da profitti X", "source": "X", "amountUSD": 100, "chain": "solana",
+        "split": { "Name1": 50, "Name2": 50 } }
+    ]
+  }
+}
 ```
 
-**Example:**
-```
-https://your-username.github.io/geod_board/?wallet=3RZWX21zh9ez3WgHDVX9FbhCv6eUmSsfo6heTegWT6HJ&helius=fb0bd728-xxxx&coingecko=CG-xxxx
-```
+Only `wallet`, `helius` and `coingecko` are required. The older form `?wallet=...&helius=...&coingecko=...` still works and shows the dashboard without the personal sections.
+
+Base64 is an encoding, not encryption: anyone with the link can read its contents, so share it only with the people who should see it.
 
 ### 3. Bookmark the URL
 
@@ -79,7 +92,7 @@ open "http://localhost:8000/?wallet=YOUR_WALLET&helius=YOUR_KEY&coingecko=YOUR_K
 
 ## Security
 
-- **No API keys in source code** - Keys are passed via URL parameters
+- **No API keys or personal data in source code** - Wallets, keys, amounts and partner splits are passed in the link
 - **Safe to publish publicly** - Share your repo without exposing your keys
 - **Share the full URL privately** - Only share the URL with parameters to trusted friends
 - **Regenerate if compromised** - You can always regenerate keys at Helius/CoinGecko
@@ -89,11 +102,12 @@ open "http://localhost:8000/?wallet=YOUR_WALLET&helius=YOUR_KEY&coingecko=YOUR_K
 ```
 geod_board/
 ├── index.html          # Main dashboard page
+├── setup.html          # Builds the dashboard link from a settings JSON
 ├── css/
 │   └── style.css       # Neo-Industrial styling
 ├── js/
-│   ├── config.js       # Configuration defaults (empty keys)
-│   ├── api.js          # CoinGecko & Helius API clients
+│   ├── config.js       # Public constants (token mints, contracts)
+│   ├── api.js          # CoinGecko, Helius & Blockscout API clients
 │   ├── utils.js        # Formatting helpers
 │   └── app.js          # Main application logic
 └── README.md           # This file

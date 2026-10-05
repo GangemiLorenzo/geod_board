@@ -29,9 +29,9 @@
 
     <main class="main">
         <section class="card investment-card">
-            <div class="card-label">IL NOSTRO INVESTIMENTO</div>
+            <div class="card-label" id="investment-title">IL NOSTRO INVESTIMENTO</div>
             <div class="investment-headline" id="investment-headline"></div>
-            <div class="investment-grid">
+            <div class="investment-grid" id="investment-grid">
                 <div>
                     <div class="investment-label">Soldi messi</div>
                     <div class="investment-value" id="invested-value">--</div>
@@ -100,21 +100,12 @@
             <button class="tx-more" id="tx-more" hidden>MOSTRA ALTRI</button>
         </section>
 
-        <section class="miners-section">
+        <section class="miners-section" id="miners-section">
             <div class="section-header">
                 <h2 class="section-title">MINERS</h2>
                 <span class="miners-note">Stato disponibile sulla console GEODNET</span>
             </div>
-            <div class="miners-grid">
-                <div class="miner-card">
-                    <div class="miner-id">E831CD2AC355</div>
-                    <div class="miner-location">📍 Italia</div>
-                </div>
-                <div class="miner-card">
-                    <div class="miner-id">E831CD30C3BD</div>
-                    <div class="miner-location">📍 Italia</div>
-                </div>
-            </div>
+            <div class="miners-grid" id="miners-grid"></div>
             <a href="https://console.geodnet.com/mine" target="_blank" class="console-link">
                 → APRI LA CONSOLE GEODNET
             </a>

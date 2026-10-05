@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GEOD Dashboard Setup</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .setup { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; position: relative; z-index: 1; }
+        .setup h1 { font-size: 1rem; letter-spacing: 0.15em; margin-bottom: 1rem; }
+        .setup p { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem; }
+        .setup textarea, .setup input {
+            width: 100%; background: var(--bg-elevated); color: var(--text-primary);
+            border: 1px solid var(--border); font-family: inherit; font-size: 0.8rem; padding: 0.75rem;
+        }
+        .setup textarea { min-height: 420px; }
+        .setup button {
+            margin: 1rem 0; background: var(--accent-primary); color: #000; border: none;
+            font-family: inherit; font-weight: 700; letter-spacing: 0.1em; padding: 0.6rem 1.2rem; cursor: pointer;
+        }
+        .setup .error { color: var(--accent-negative); font-size: 0.8rem; min-height: 1.2rem; }
+        .setup a { color: var(--accent-secondary); }
+    </style>
+</head>
+<body>
+    <div class="grid-bg"></div>
+    <div class="setup">
+        <h1>CONFIGURAZIONE DEL LINK</h1>
+        <p>Modifica il JSON e premi "Crea link". Tutto avviene in questo browser: niente viene inviato da nessuna parte.
+           Il link contiene le chiavi API e i dati personali (solo codificati, non cifrati): condividilo solo con chi deve vederlo.</p>
+        <textarea id="json" spellcheck="false"></textarea>
+        <div class="error" id="error"></div>
+        <button id="build">CREA LINK</button>
+        <input id="link" readonly placeholder="Il link apparirà qui">
+        <p id="open"></p>
+    </div>
+    <script src="js/utils.js"></script>
+    <script>
+        const template = {
+            wallet: 'INDIRIZZO_WALLET_SOLANA',
+            helius: 'CHIAVE_HELIUS',
+            coingecko: 'CHIAVE_COINGECKO',
+            polygonWallet: '0x... (facoltativo: vecchio wallet Polygon)',
+            miners: [
+                { id: 'ID_MINER', location: 'Italia' }
+            ],
+            investment: {
+                amountEUR: 1000,
+                description: '2 miner (500 € + 500 €)',
+                partners: ['Nome1', 'Nome2'],
+                deposits: [
+                    { label: 'Da profitti X', source: 'X', amountUSD: 100, chain: 'solana', split: { Nome1: 50, Nome2: 50 } }
+                ]
+            }
+        };
+
+        const params = new URLSearchParams(location.search);
+        let current = template;
+        try {
+            if (params.get('c')) current = Utils.decodeConfig(params.get('c'));
+        } catch (e) {}
+        document.getElementById('json').value = JSON.stringify(current, null, 2);
+
+        document.getElementById('build').addEventListener('click', () => {
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = '';
+            let settings;
+            try {
+                settings = JSON.parse(document.getElementById('json').value);
+            } catch (e) {
+                errorEl.textContent = 'JSON non valido: ' + e.message;
+                return;
+            }
+            for (const d of settings.investment?.deposits || []) {
+                const total = Object.values(d.split || {}).reduce((sum, p) => sum + p, 0);
+                if (d.split && total !== 100) {
+                    errorEl.textContent = `Le percentuali di "${d.label}" sommano a ${total}%, non 100%.`;
+                    return;
+                }
+            }
+            const url = new URL('index.html', location.href);
+            url.search = 'c=' + Utils.encodeConfig(settings);
+            document.getElementById('link').value = url.toString();
+            document.getElementById('open').innerHTML = `<a href="${url}" target="_blank">Apri la dashboard ↗</a>`;
+        });
+    </script>
+</body>
+</html>

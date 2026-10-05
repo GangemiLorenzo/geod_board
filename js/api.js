@@ -200,7 +200,7 @@ const API = {
     },
 
     // Solana wallet: GEOD/USDC transactions as plain-language activity entries.
-    async getWalletActivity() {
+    async getWalletActivity(migratedAt = null) {
         const [geodTxs, usdcTxs] = await Promise.all([
             this.getTokenAccountHistory(CONFIG.geodMint, 10),
             this.getTokenAccountHistory(CONFIG.usdcMint, 5)
@@ -230,15 +230,73 @@ const API = {
             moves.push(move);
         }
 
-        return this.classifyMoves(moves);
+        return this.classifyMoves(moves, migratedAt);
     },
 
-    // Old Polygon wallet: read from the snapshot saved by the "Polygon snapshot"
-    // GitHub Action. Only GEOD, dollar stablecoins and POL are considered, which
-    // also hides the spam tokens scammers airdrop to Polygon wallets.
+    // Old Polygon wallet, fetched from Blockscout's public API (no key, CORS
+    // enabled). Only GEOD, dollar stablecoins and POL are read, which also
+    // hides the spam tokens scammers airdrop to Polygon wallets. The wallet is
+    // no longer used, so the result is cached in the browser for a week.
+    async getPolygonHistory(wallet) {
+        const cacheKey = `polygon_history_${wallet}`;
+        try {
+            const cached = JSON.parse(localStorage.getItem(cacheKey));
+            if (cached && Date.now() - cached.savedAt < 7 * 86400000) return cached.history;
+        } catch (e) {}
+
+        const base = `https://polygon.blockscout.com/api/v2/addresses/${wallet}`;
+        const fetchPages = async (path) => {
+            const items = [];
+            let params = '';
+            for (let page = 0; page < 60; page++) {
+                const sep = path.includes('?') ? '&' : '?';
+                const body = await this.fetchJSON(`${base}${path}${params ? sep + params : ''}`);
+                items.push(...(body.items || []));
+                if (!body.next_page_params) break;
+                params = new URLSearchParams(body.next_page_params).toString();
+            }
+            return items;
+        };
+
+        const contracts = [CONFIG.polygon.geodContract, ...Object.keys(CONFIG.polygon.usdContracts)];
+        const tokenItems = (await Promise.all(contracts.map(c =>
+            fetchPages(`/token-transfers?type=ERC-20&token=${c}`)))).flat();
+        const internalItems = await fetchPages('/internal-transactions');
+
+        const seen = new Set();
+        const history = {
+            tokenTransfers: tokenItems.filter(t => {
+                const key = `${t.transaction_hash || t.tx_hash}:${t.log_index}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            }).map(t => ({
+                hash: t.transaction_hash || t.tx_hash,
+                timeStamp: Math.floor(Date.parse(t.timestamp) / 1000),
+                from: t.from.hash.toLowerCase(),
+                to: t.to.hash.toLowerCase(),
+                contract: (t.token.address_hash || t.token.address).toLowerCase(),
+                decimals: +(t.total.decimals ?? t.token.decimals),
+                value: t.total.value
+            })),
+            nativeTransfers: internalItems.filter(t => t.success !== false && t.value !== '0').map(t => ({
+                hash: t.transaction_hash || t.tx_hash,
+                timeStamp: Math.floor(Date.parse(t.timestamp) / 1000),
+                from: t.from.hash.toLowerCase(),
+                to: t.to?.hash.toLowerCase(),
+                value: t.value
+            }))
+        };
+
+        try {
+            localStorage.setItem(cacheKey, JSON.stringify({ savedAt: Date.now(), history }));
+        } catch (e) {}
+        return history;
+    },
+
     async getPolygonActivity() {
-        const snapshot = await this.fetchJSON(CONFIG.polygon.snapshotUrl);
-        const wallet = snapshot.address;
+        const wallet = CONFIG.polygon.wallet;
+        const history = await this.getPolygonHistory(wallet);
         const geodContract = CONFIG.polygon.geodContract;
         const usdContracts = Object.keys(CONFIG.polygon.usdContracts);
         const byHash = new Map();
@@ -250,7 +308,7 @@ const API = {
             return byHash.get(hash);
         };
 
-        for (const t of snapshot.tokenTransfers) {
+        for (const t of history.tokenTransfers) {
             const isGeod = t.contract === geodContract;
             if (!isGeod && !usdContracts.includes(t.contract)) continue;
 
@@ -266,7 +324,7 @@ const API = {
             }
         }
 
-        for (const t of snapshot.nativeTransfers) {
+        for (const t of history.nativeTransfers) {
             if (!t.hash) continue;
             const sign = t.to === wallet ? 1 : t.from === wallet ? -1 : 0;
             moveFor(t.hash, t.timeStamp).pol += sign * Number(t.value) / 1e18;
@@ -275,7 +333,7 @@ const API = {
         return this.classifyMoves([...byHash.values()]);
     },
 
-    classifyMoves(moves) {
+    classifyMoves(moves, migratedAt = null) {
         const entries = [];
         const geodSenders = {};
 
@@ -310,15 +368,15 @@ const API = {
         for (const entry of entries) {
             if (entry.kind === 'geod-in' && entry.geodFrom === rewardSender) {
                 entry.kind = 'reward';
-            } else if (entry.kind === 'geod-in' && entry.chain === 'solana' &&
-                Math.abs(entry.timestamp - CONFIG.polygon.migratedAt) < 3 * 86400) {
+            } else if (entry.kind === 'geod-in' && entry.chain === 'solana' && migratedAt &&
+                Math.abs(entry.timestamp - migratedAt) < 3 * 86400) {
                 entry.kind = 'migrate-in';
             }
         }
 
         // Known deposits: the incoming USDC transfer closest to the stated amount
         // (within 2%) is shown as that deposit.
-        for (const deposit of CONFIG.investment.deposits || []) {
+        for (const deposit of CONFIG.investment?.deposits || []) {
             const match = entries
                 .filter(e => e.kind === 'usdc-in' && e.chain === deposit.chain &&
                     Math.abs(e.usdc - deposit.amountUSD) <= deposit.amountUSD * 0.02)
