@@ -190,6 +190,44 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
+.deposits {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.deposits:empty {
+    display: none;
+}
+
+.deposit-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.deposit-split {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.deposit-split > div {
+    display: grid;
+    grid-template-columns: 6rem 3rem auto;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+
+.deposit-split strong {
+    text-align: right;
+    color: var(--accent-secondary);
+}
+
 .ownership-table {
     overflow-x: auto;
 }

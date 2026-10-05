@@ -235,6 +235,33 @@ const App = {
         this.updateInvestmentUI();
     },
 
+    // One card per deposit: money in the wallet that is not part of the
+    // miners investment, with its own split between the partners.
+    renderDeposits(deposits) {
+        const container = document.getElementById('deposits');
+        const usd = (v) => '$' + Utils.formatNumber(v, 0);
+        const esc = Utils.escapeHtml;
+
+        container.innerHTML = deposits.map(d => `
+            <section class="card deposit-card">
+                <div class="card-label">FONDI ${esc((d.source || d.label).toUpperCase())}</div>
+                <div class="deposit-row">
+                    <div>
+                        <div class="investment-value">${usd(d.amountUSD)}</div>
+                        <div class="investment-label">in USDC nel wallet</div>
+                    </div>
+                    <div class="deposit-split">
+                        ${Object.entries(d.split || {}).map(([name, pct]) => `
+                            <div><span class="ownership-name">${esc(name)}</span>
+                                <span class="ownership-pct">${pct}%</span>
+                                <strong>${usd(d.amountUSD * pct / 100)}</strong></div>`).join('')}
+                    </div>
+                </div>
+                <div class="investment-note">${esc(d.label)}: dollari arrivati da un altro wallet.
+                    Non fanno parte dei soldi messi nei miner e restano un importo fisso in dollari.</div>
+            </section>`).join('');
+    },
+
     // Each deposit's dollar amount belongs to the partners in its own split;
     // the rest of today's value (the GEOD side) is shared equally.
     updateOwnershipUI(worth) {
@@ -323,25 +350,27 @@ const App = {
         // page reads in dollars.
         const eurRate = this.state.eurRate;
         const deposits = CONFIG.investment.deposits || [];
-        const minersUSD = eurRate ? CONFIG.investment.amountEUR / eurRate : null;
-        const invested = minersUSD === null ? null
-            : minersUSD + deposits.reduce((sum, d) => sum + d.amountUSD, 0);
-        const worth = this.state.portfolioValue;
+        const depositTotal = deposits.reduce((sum, d) => sum + d.amountUSD, 0);
+        const invested = eurRate ? CONFIG.investment.amountEUR / eurRate : null;
+        const walletValue = this.state.portfolioValue;
+        // Deposits (e.g. HNT profits) sit in the wallet but are not part of the
+        // miners investment, so they are left out of its value and result.
+        const worth = walletValue ? walletValue - depositTotal : null;
         const usd = (v) => '$' + Utils.formatNumber(v, 0);
 
         document.getElementById('invested-value').textContent = invested ? usd(invested) : '--';
-        document.getElementById('invested-breakdown').innerHTML = invested
-            ? [`Miner: ${usd(minersUSD)}`, ...deposits.map(d => `${Utils.escapeHtml(d.label)}: ${usd(d.amountUSD)}`)]
-                .map(line => `<div>${line}</div>`).join('')
-            : '';
+        document.getElementById('invested-breakdown').textContent = '';
         document.getElementById('investment-note').textContent =
-            `Miner: ${CONFIG.investment.description || ''}, convertiti in dollari al cambio di oggi. ` +
-            deposits.map(d => `${d.label}: dollari (USDC) aggiunti da un altro wallet. `).join('') +
-            `"Valore oggi" sono i GEOD e gli USDC nel wallet ai prezzi di oggi; i miner stessi non sono conteggiati.`;
+            `Soldi messi: ${CONFIG.investment.description || 'i miner'}, convertiti in dollari al cambio di oggi. ` +
+            `"Valore oggi" sono i GEOD e gli USDC nel wallet ai prezzi di oggi` +
+            (depositTotal ? `, esclusi i ${usd(depositTotal)} della scheda sotto` : '') +
+            `; i miner stessi non sono conteggiati.`;
+
+        this.renderDeposits(deposits);
 
         if (!worth || !invested) return;
 
-        this.updateOwnershipUI(worth);
+        this.updateOwnershipUI(walletValue);
 
         const result = worth - invested;
         const percent = (result / invested) * 100;
