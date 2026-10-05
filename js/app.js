@@ -229,9 +229,16 @@ const App = {
     },
 
     updatePortfolioUI() {
-        document.getElementById('portfolio-value').textContent = '$' + Utils.formatNumber(this.state.portfolioValue, 2);
+        // Deposits (e.g. HNT funds) are a separate pot: shown apart, not in the value.
+        const separate = this.separateFunds();
+        document.getElementById('portfolio-value').textContent =
+            '$' + Utils.formatNumber(this.state.portfolioValue - separate, 2);
         document.getElementById('geod-balance').textContent = Utils.formatNumber(this.state.geodBalance, 4) + ' GEOD';
-        document.getElementById('usdc-balance').textContent = Utils.formatNumber(this.state.usdcBalance, 2) + ' USDC';
+        document.getElementById('usdc-balance').textContent =
+            Utils.formatNumber(Math.max(this.state.usdcBalance - separate, 0), 2) + ' USDC';
+        document.getElementById('separate-funds').textContent = separate
+            ? `+ $${Utils.formatNumber(separate, 0)} fondi ${(CONFIG.investment.deposits || []).map(d => d.source || d.label).join(', ')} a parte`
+            : '';
         this.updateInvestmentUI();
     },
 
@@ -328,6 +335,10 @@ const App = {
             `Negli ultimi 30 giorni i miner hanno guadagnato <strong>${Utils.formatNumber(mined, 0)} GEOD</strong>` +
             ` (≈ $${Utils.formatNumber(value, 0)}).` +
             (last ? ` <span class="${stale ? 'warn' : ''}">Ultimo pagamento ${Utils.timeAgo(last.timestamp)}.</span>` : '');
+    },
+
+    separateFunds() {
+        return (CONFIG.investment?.deposits || []).reduce((sum, d) => sum + d.amountUSD, 0);
     },
 
     updateInvestmentUI() {
@@ -537,10 +548,12 @@ const App = {
 
             const entries = this.state.rawEntries;  // newest first
             let geod = this.state.geodBalance || 0;
-            let usd = this.state.usdcBalance || 0;
+            // The separate funds (e.g. HNT) are left out of the whole history.
+            let usd = (this.state.usdcBalance || 0) - this.separateFunds();
             let p = 0;
             for (let i = dayList.length - 1; i >= 0; i--) {
                 while (p < entries.length && entries[p].timestamp >= dayList[i].end) {
+                    if (entries[p].kind === 'deposit') { p++; continue; }
                     geod -= entries[p].geod;
                     usd -= entries[p].usdc;
                     p++;
