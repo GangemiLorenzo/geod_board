@@ -8,6 +8,7 @@ A static web dashboard for monitoring GEOD mining operations. Features Neo-Indus
 - **Portfolio Value** - Total GEOD holdings with USD conversion
 - **Combined Chart** - Price index, portfolio index, and daily rewards in one view
 - **Mining Rewards** - Daily GEOD rewards with bar chart visualization
+- **Transactions** - Plain-language list of mining rewards (grouped per day), buys, sells and transfers, each linked to Solscan as proof
 - **Auto-Refresh** - Updates every 60 seconds
 
 ## Quick Start

@@ -9,6 +9,7 @@ const CONFIG = {
     heliusApiKey: '',
     coingeckoApiKey: '',
     refreshInterval: 60000,
+    activityRefreshInterval: 300000,
     priceChartDays: 90,
     defaultChartDays: 90
 };

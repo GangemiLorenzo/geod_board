@@ -16,6 +16,9 @@ const App = {
             prices: [],
             portfolios: []
         },
+        activity: [],
+        activityShown: 15,
+        activityLoadedAt: 0,
         isLoading: false,
         error: null,
         refreshTimer: null,
@@ -79,6 +82,7 @@ const App = {
         this.renderLegend();
         await this.refresh();
         this.loadChartData(this.state.chartDays);
+        if (!this.state.activityLoadedAt) this.loadTransactions();
         this.startAutoRefresh();
     },
 
@@ -90,6 +94,11 @@ const App = {
                 e.target.classList.add('active');
                 this.loadChartData(days);
             });
+        });
+
+        document.getElementById('tx-more').addEventListener('click', () => {
+            this.state.activityShown += 15;
+            this.renderTransactions();
         });
     },
 
@@ -162,6 +171,10 @@ const App = {
             
             this.setStatus('', 'LIVE');
             this.updateLastUpdate();
+
+            if (Date.now() - this.state.activityLoadedAt > CONFIG.activityRefreshInterval) {
+                this.loadTransactions();
+            }
             
         } catch (error) {
             console.error('Refresh failed:', error);
@@ -442,6 +455,122 @@ const App = {
             loadingEl.innerHTML = 'Chart data unavailable<br><small style="color: var(--text-muted)">' + error.message + '</small>';
             loadingEl.style.display = 'block';
         }
+    },
+
+    async loadTransactions() {
+        this.state.activityLoadedAt = Date.now();
+        try {
+            this.state.activity = this.groupRewardsByDay(await API.getWalletActivity());
+            this.renderTransactions();
+        } catch (error) {
+            console.error('Failed to load transactions:', error);
+            if (this.state.activity.length === 0) {
+                document.getElementById('transactions-list').innerHTML =
+                    '<div class="tx-empty">Transactions unavailable right now</div>';
+            }
+        }
+    },
+
+    // Collapses each day's mining payouts into a single row so they don't
+    // drown out the buys, sells and transfers.
+    groupRewardsByDay(entries) {
+        const result = [];
+        const rewardRows = {};
+
+        for (const entry of entries) {
+            if (entry.kind !== 'reward') {
+                result.push(entry);
+                continue;
+            }
+            const d = new Date(entry.timestamp * 1000);
+            const day = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+            if (rewardRows[day]) {
+                rewardRows[day].geod += entry.geod;
+                rewardRows[day].count++;
+            } else {
+                rewardRows[day] = { ...entry, count: 1 };
+                result.push(rewardRows[day]);
+            }
+        }
+
+        return result;
+    },
+
+    describeTransaction(entry) {
+        const geod = Utils.formatNumber(Math.abs(entry.geod), 2) + ' GEOD';
+        const usdc = Utils.formatNumber(Math.abs(entry.usdc), 2) + ' USDC';
+        const geodNow = this.state.price
+            ? '≈ ' + Utils.formatPrice(Math.abs(entry.geod) * this.state.price, 2) + ' today'
+            : '';
+
+        switch (entry.kind) {
+            case 'reward':
+                return {
+                    title: 'Mining reward',
+                    note: entry.count > 1 ? `${entry.count} payouts` : 'Earned by the miners',
+                    amount: '+' + geod, sub: geodNow, dir: 'incoming'
+                };
+            case 'sell':
+                return {
+                    title: 'Sold GEOD',
+                    note: 'Converted to USDC (digital dollars)',
+                    amount: entry.geod ? '-' + geod : '+' + usdc,
+                    sub: entry.geod && entry.usdc ? 'for ' + usdc : '', dir: 'swap'
+                };
+            case 'buy':
+                return {
+                    title: 'Bought GEOD',
+                    note: 'Paid with USDC (digital dollars)',
+                    amount: entry.geod ? '+' + geod : '-' + usdc,
+                    sub: entry.geod && entry.usdc ? 'for ' + usdc : '', dir: 'swap'
+                };
+            case 'geod-in':
+                return { title: 'GEOD received', note: 'Transfer into the wallet', amount: '+' + geod, sub: geodNow, dir: 'incoming' };
+            case 'geod-out':
+                return { title: 'GEOD sent', note: 'Transfer out of the wallet', amount: '-' + geod, sub: geodNow, dir: 'outgoing' };
+            case 'usdc-in':
+                return { title: 'USDC received', note: 'Digital dollars added', amount: '+' + usdc, sub: '', dir: 'incoming' };
+            default:
+                return { title: 'USDC sent', note: 'Digital dollars withdrawn', amount: '-' + usdc, sub: '', dir: 'outgoing' };
+        }
+    },
+
+    renderTransactions() {
+        const listEl = document.getElementById('transactions-list');
+        const moreEl = document.getElementById('tx-more');
+        const entries = this.state.activity;
+
+        document.getElementById('tx-count').textContent =
+            entries.length ? `LATEST ${entries.length}` : '';
+
+        if (entries.length === 0) {
+            listEl.innerHTML = '<div class="tx-empty">No transactions yet</div>';
+            moreEl.hidden = true;
+            return;
+        }
+
+        listEl.innerHTML = entries.slice(0, this.state.activityShown).map(entry => {
+            const tx = this.describeTransaction(entry);
+            const date = new Date(entry.timestamp * 1000).toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric'
+            });
+            return `
+                <div class="tx-item ${tx.dir}">
+                    <div class="tx-info">
+                        <div class="tx-title">${tx.title}</div>
+                        <div class="tx-date">${date} · ${tx.note}</div>
+                    </div>
+                    <div class="tx-value">
+                        <div class="tx-amount ${tx.dir === 'outgoing' ? 'negative' : tx.dir === 'incoming' ? 'positive' : ''}">${tx.amount}</div>
+                        <div class="tx-sub">${tx.sub}</div>
+                    </div>
+                    <a class="tx-link" href="https://solscan.io/tx/${entry.signature}" target="_blank" rel="noopener"
+                       title="See this transaction on the public blockchain">PROOF ↗</a>
+                </div>
+            `;
+        }).join('');
+
+        moreEl.hidden = entries.length <= this.state.activityShown;
     },
 
     startAutoRefresh() {

@@ -152,23 +152,107 @@ const API = {
         return parseFloat(balance.uiAmount || balance.amount / Math.pow(10, balance.decimals));
     },
 
-    async getGEODTokenAccount() {
+    tokenAccounts: {},
+
+    async getTokenAccount(mint) {
+        if (this.tokenAccounts[mint]) {
+            return this.tokenAccounts[mint];
+        }
+
         const response = await this.heliusRpcRequest('getTokenAccountsByOwner', [
             CONFIG.wallet,
-            { mint: CONFIG.geodMint },
+            { mint: mint },
             { encoding: 'jsonParsed' }
         ]);
-        
+
         if (response.error) {
             throw new Error(response.error.message);
         }
-        
+
         const accounts = response.result?.value || [];
         if (accounts.length === 0) {
             return null;
         }
-        
+
+        this.tokenAccounts[mint] = accounts[0].pubkey;
         return accounts[0].pubkey;
+    },
+
+    async getGEODTokenAccount() {
+        return this.getTokenAccount(CONFIG.geodMint);
+    },
+
+    async getTokenAccountHistory(mint, limit = 100) {
+        const tokenAccount = await this.getTokenAccount(mint);
+        if (!tokenAccount) return [];
+
+        return this.fetchJSON(
+            `https://api.helius.xyz/v0/addresses/${tokenAccount}/transactions?api-key=${CONFIG.heliusApiKey}&limit=${limit}`
+        );
+    },
+
+    // Turns raw GEOD/USDC transactions into plain-language activity entries.
+    async getWalletActivity() {
+        const [geodTxs, usdcTxs] = await Promise.all([
+            this.getTokenAccountHistory(CONFIG.geodMint),
+            this.getTokenAccountHistory(CONFIG.usdcMint)
+        ]);
+
+        const bySignature = new Map();
+        for (const tx of [...geodTxs, ...usdcTxs]) {
+            bySignature.set(tx.signature, tx);
+        }
+
+        const entries = [];
+        const geodSenders = {};
+
+        for (const tx of bySignature.values()) {
+            let geod = 0;
+            let usdc = 0;
+            let geodFrom = null;
+
+            for (const t of tx.tokenTransfers || []) {
+                const sign = t.toUserAccount === CONFIG.wallet ? 1
+                    : t.fromUserAccount === CONFIG.wallet ? -1 : 0;
+                if (t.mint === CONFIG.geodMint) {
+                    geod += sign * t.tokenAmount;
+                    if (sign > 0) geodFrom = t.fromUserAccount;
+                } else if (t.mint === CONFIG.usdcMint) {
+                    usdc += sign * t.tokenAmount;
+                }
+            }
+
+            if (geod === 0 && usdc === 0) continue;
+
+            const isSwap = tx.type === 'SWAP' || (geod !== 0 && usdc !== 0);
+            let kind;
+            if (geod > 0 && isSwap) kind = 'buy';
+            else if (geod < 0 && isSwap) kind = 'sell';
+            else if (geod > 0) kind = 'geod-in';
+            else if (geod < 0) kind = 'geod-out';
+            else if (isSwap) kind = usdc > 0 ? 'sell' : 'buy';
+            else kind = usdc > 0 ? 'usdc-in' : 'usdc-out';
+
+            if (kind === 'geod-in' && geodFrom) {
+                geodSenders[geodFrom] = (geodSenders[geodFrom] || 0) + 1;
+            }
+
+            entries.push({ signature: tx.signature, timestamp: tx.timestamp, kind, geod, usdc, geodFrom });
+        }
+
+        // Mining payouts all come from the same distributor wallet, so the most
+        // frequent GEOD sender is treated as the reward source.
+        const rewardSender = Object.entries(geodSenders)
+            .filter(([, count]) => count >= 3)
+            .sort((a, b) => b[1] - a[1])[0]?.[0];
+
+        for (const entry of entries) {
+            if (entry.kind === 'geod-in' && entry.geodFrom === rewardSender) {
+                entry.kind = 'reward';
+            }
+        }
+
+        return entries.sort((a, b) => b.timestamp - a.timestamp);
     },
 
     async getGEODTransactions(limit = 15) {

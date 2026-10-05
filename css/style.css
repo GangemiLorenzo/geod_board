@@ -395,8 +395,6 @@ body {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    max-height: 400px;
-    overflow-y: auto;
 }
 
 .transactions-list::-webkit-scrollbar {
@@ -452,6 +450,49 @@ body {
 
 .tx-amount.negative {
     color: var(--accent-negative);
+}
+
+.tx-item.swap {
+    border-left: 3px solid var(--accent-primary);
+}
+
+.tx-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.tx-value {
+    text-align: right;
+}
+
+.tx-sub {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.tx-empty {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    padding: 1rem 0;
+}
+
+.tx-more {
+    margin-top: 0.75rem;
+    width: 100%;
+    background-color: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    padding: 0.6rem;
+    cursor: pointer;
+}
+
+.tx-more:hover {
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
 }
 
 .tx-link {
@@ -815,5 +856,17 @@ body {
     .legend-item {
         width: 100%;
         justify-content: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .tx-item {
+        grid-template-columns: 1fr auto;
+        gap: 0.25rem 0.75rem;
+        padding: 0.75rem;
+    }
+
+    .tx-link {
+        grid-column: 1 / -1;
     }
 }
