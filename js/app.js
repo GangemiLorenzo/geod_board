@@ -230,13 +230,15 @@ const App = {
         // The miners were paid in euros; convert at today's rate so the whole
         // page reads in dollars.
         const eurRate = this.state.eurRate;
-        const invested = eurRate ? CONFIG.investment.amountEUR / eurRate : null;
+        const deposits = CONFIG.investment.depositsUSD || 0;
+        const invested = eurRate ? CONFIG.investment.amountEUR / eurRate + deposits : null;
         const worth = this.state.portfolioValue;
         const usd = (v) => '$' + Utils.formatNumber(v, 0);
 
         document.getElementById('invested-value').textContent = invested ? usd(invested) : '--';
         document.getElementById('investment-note').textContent =
-            `${CONFIG.investment.description}, converted to dollars at today's exchange rate. ` +
+            `${CONFIG.investment.description}, converted to dollars at today's exchange rate` +
+            (deposits ? `, plus a $${Utils.formatNumber(deposits, 0)} deposit from another wallet. ` : '. ') +
             `"Worth today" is the GEOD and USDC in the wallet at today's prices; the miners themselves are not counted.`;
 
         if (!worth || !invested) return;
