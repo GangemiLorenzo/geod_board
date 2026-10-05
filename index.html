@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="it">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -21,7 +21,7 @@
         <div class="header-right">
             <span class="status-indicator" id="status-indicator">
                 <span class="status-dot"></span>
-                <span class="status-text">LOADING</span>
+                <span class="status-text">CARICAMENTO</span>
             </span>
             <span class="last-update" id="last-update">--:--:--</span>
         </div>
@@ -29,20 +29,20 @@
 
     <main class="main">
         <section class="card investment-card">
-            <div class="card-label">OUR INVESTMENT</div>
+            <div class="card-label">IL NOSTRO INVESTIMENTO</div>
             <div class="investment-headline" id="investment-headline"></div>
             <div class="investment-grid">
                 <div>
-                    <div class="investment-label">Money put in</div>
+                    <div class="investment-label">Soldi messi</div>
                     <div class="investment-value" id="invested-value">--</div>
                     <div class="investment-breakdown" id="invested-breakdown"></div>
                 </div>
                 <div>
-                    <div class="investment-label">Worth today</div>
+                    <div class="investment-label">Valore oggi</div>
                     <div class="investment-value highlight" id="worth-value">--</div>
                 </div>
                 <div>
-                    <div class="investment-label">Result so far</div>
+                    <div class="investment-label">Risultato finora</div>
                     <div class="investment-value" id="result-value">--</div>
                     <div class="card-change" id="result-percent"></div>
                 </div>
@@ -51,14 +51,20 @@
             <div class="investment-note" id="investment-note"></div>
         </section>
 
+        <section class="card ownership-card" id="ownership-card" hidden>
+            <div class="card-label">CHI POSSIEDE COSA</div>
+            <div class="ownership-table" id="ownership-table"></div>
+            <div class="investment-note" id="ownership-note"></div>
+        </section>
+
         <section class="stats-row two-col">
             <div class="card">
-                <div class="card-label">GEOD PRICE</div>
+                <div class="card-label">PREZZO GEOD</div>
                 <div class="card-value" id="geod-price">--</div>
                 <div class="card-change" id="geod-change">--</div>
             </div>
             <div class="card">
-                <div class="card-label">PORTFOLIO VALUE</div>
+                <div class="card-label">VALORE PORTAFOGLIO</div>
                 <div class="card-value highlight" id="portfolio-value">--</div>
                 <div class="card-sub" id="geod-balance">-- GEOD</div>
                 <div class="card-sub" id="usdc-balance">-- USDC</div>
@@ -67,17 +73,17 @@
 
         <section class="chart-section combined-chart">
             <div class="section-header">
-                <h2 class="section-title">GEOD OVERVIEW</h2>
+                <h2 class="section-title">ANDAMENTO</h2>
                 <div class="timeframe-buttons">
                     <button class="tf-btn-cb" data-days="30">1M</button>
                     <button class="tf-btn-cb active" data-days="90">3M</button>
                     <button class="tf-btn-cb" data-days="180">6M</button>
-                    <button class="tf-btn-cb" data-days="365">1Y</button>
+                    <button class="tf-btn-cb" data-days="365">1A</button>
                 </div>
             </div>
             <div class="legend-container" id="chart-legend"></div>
             <div class="chart-container chart-large">
-                <div class="chart-loading" id="combined-chart-loading">Loading...</div>
+                <div class="chart-loading" id="combined-chart-loading">Caricamento...</div>
                 <canvas id="combined-chart"></canvas>
             </div>
             <div class="tx-summary" id="combined-summary"></div>
@@ -85,32 +91,32 @@
 
         <section class="transactions-section">
             <div class="section-header">
-                <h2 class="section-title">TRANSACTIONS</h2>
+                <h2 class="section-title">MOVIMENTI</h2>
                 <span class="tx-count" id="tx-count"></span>
             </div>
             <div class="transactions-list" id="transactions-list">
-                <div class="tx-empty">Loading...</div>
+                <div class="tx-empty">Caricamento...</div>
             </div>
-            <button class="tx-more" id="tx-more" hidden>SHOW MORE</button>
+            <button class="tx-more" id="tx-more" hidden>MOSTRA ALTRI</button>
         </section>
 
         <section class="miners-section">
             <div class="section-header">
                 <h2 class="section-title">MINERS</h2>
-                <span class="miners-note">Status available on GEODNET Console</span>
+                <span class="miners-note">Stato disponibile sulla console GEODNET</span>
             </div>
             <div class="miners-grid">
                 <div class="miner-card">
                     <div class="miner-id">E831CD2AC355</div>
-                    <div class="miner-location">📍 Italy</div>
+                    <div class="miner-location">📍 Italia</div>
                 </div>
                 <div class="miner-card">
                     <div class="miner-id">E831CD30C3BD</div>
-                    <div class="miner-location">📍 Italy</div>
+                    <div class="miner-location">📍 Italia</div>
                 </div>
             </div>
             <a href="https://console.geodnet.com/mine" target="_blank" class="console-link">
-                → VIEW ON GEODNET CONSOLE
+                → APRI LA CONSOLE GEODNET
             </a>
         </section>
     </main>
@@ -120,7 +126,7 @@
             Wallet: <span class="wallet-addr" id="wallet-display">--</span>
         </div>
         <div class="footer-right">
-            Auto-refresh: 60s
+            Aggiornamento automatico: 60s
         </div>
     </footer>
 

@@ -45,7 +45,7 @@ const App = {
         if (!coingecko) missing.push('coingecko');
         
         if (missing.length > 0) {
-            this.state.configError = `Missing URL parameters: ${missing.join(', ')}`;
+            this.state.configError = `Parametri mancanti nel link: ${missing.join(', ')}`;
             return false;
         }
         
@@ -63,17 +63,17 @@ const App = {
         const main = document.querySelector('.main');
         main.innerHTML = `
             <div class="config-error">
-                <h2>⚠ Configuration Required</h2>
+                <h2>⚠ Configurazione richiesta</h2>
                 <p>${this.state.configError}</p>
-                <p class="config-help">Add the following parameters to your URL:</p>
+                <p class="config-help">Aggiungi questi parametri al link:</p>
                 <code>?wallet=YOUR_WALLET&helius=YOUR_HELIUS_KEY&coingecko=YOUR_COINGECKO_KEY</code>
                 <div class="config-example">
-                    <p>Example:</p>
+                    <p>Esempio:</p>
                     <code>?wallet=3RZWX21zh9ez3WgHDVX9FbhCv6eUmSsfo6heTegWT6HJ&helius=fb0bd728-xxxx&coingecko=CG-xxxx</code>
                 </div>
             </div>
         `;
-        this.setStatus('error', 'CONFIG ERROR');
+        this.setStatus('error', 'ERRORE CONFIG');
     },
 
     async init() {
@@ -112,15 +112,15 @@ const App = {
         container.innerHTML = `
             <div class="legend-item price ${this.state.datasets.price ? '' : 'disabled'}" data-dataset="price">
                 <div class="legend-color"></div>
-                <span class="legend-label">GEOD PRICE</span>
+                <span class="legend-label">PREZZO GEOD</span>
             </div>
             <div class="legend-item portfolio ${this.state.datasets.portfolio ? '' : 'disabled'}" data-dataset="portfolio">
                 <div class="legend-color"></div>
-                <span class="legend-label">PORTFOLIO VALUE</span>
+                <span class="legend-label">VALORE PORTAFOGLIO</span>
             </div>
             <div class="legend-item rewards ${this.state.datasets.rewards ? '' : 'disabled'}" data-dataset="rewards">
                 <div class="legend-color"></div>
-                <span class="legend-label">GEOD MINED</span>
+                <span class="legend-label">GEOD MINATI</span>
             </div>
         `;
         
@@ -155,14 +155,14 @@ const App = {
 
     updateLastUpdate() {
         document.getElementById('last-update').textContent = 
-            new Date().toLocaleTimeString('en-US', { hour12: false });
+            new Date().toLocaleTimeString('it-IT');
     },
 
     async refresh() {
         if (this.state.isLoading) return;
         
         this.state.isLoading = true;
-        this.setStatus('loading', 'SYNCING');
+        this.setStatus('loading', 'AGGIORNAMENTO');
 
         try {
             const data = await API.fetchAllData();
@@ -178,7 +178,7 @@ const App = {
             this.updatePriceUI();
             this.updatePortfolioUI();
             
-            this.setStatus('', 'LIVE');
+            this.setStatus('', 'ONLINE');
             this.updateLastUpdate();
 
             if (Date.now() - this.state.activityLoadedAt > CONFIG.activityRefreshInterval) {
@@ -188,7 +188,7 @@ const App = {
         } catch (error) {
             console.error('Refresh failed:', error);
             this.state.error = error.message;
-            this.setStatus('error', 'ERROR');
+            this.setStatus('error', 'ERRORE');
         } finally {
             this.state.isLoading = false;
         }
@@ -208,6 +208,53 @@ const App = {
         this.updateInvestmentUI();
     },
 
+    // Each deposit's dollar amount belongs to the partners in its own split;
+    // the rest of today's value (the GEOD side) is shared equally.
+    updateOwnershipUI(worth, minersUSD) {
+        const partners = CONFIG.investment.partners || [];
+        if (partners.length === 0) return;
+
+        const deposits = CONFIG.investment.deposits || [];
+        const depositTotal = deposits.reduce((sum, d) => sum + d.amountUSD, 0);
+        const geodSide = Math.max(worth - depositTotal, 0);
+        const usd = (v) => '$' + Utils.formatNumber(v, 0);
+
+        const rows = partners.map(name => {
+            const geodShare = geodSide / partners.length;
+            const depositShares = deposits.map(d => d.amountUSD * (d.split?.[name] || 0) / 100);
+            const total = geodShare + depositShares.reduce((sum, v) => sum + v, 0);
+            return { name, geodShare, depositShares, total };
+        });
+
+        const pct = (d, name) => d.split?.[name] ? ` <span class="ownership-pct">(${d.split[name]}%)</span>` : '';
+        document.getElementById('ownership-table').innerHTML = `
+            <table>
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>GEOD <span class="ownership-pct">(1/${partners.length})</span></th>
+                        ${deposits.map(d => `<th>${d.label.replace(/^Da profitti /, '')}</th>`).join('')}
+                        <th>TOTALE OGGI</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map(r => `
+                        <tr>
+                            <td class="ownership-name">${r.name}</td>
+                            <td>${usd(r.geodShare)}</td>
+                            ${r.depositShares.map((v, i) => `<td>${usd(v)}${pct(deposits[i], r.name)}</td>`).join('')}
+                            <td class="ownership-total">${usd(r.total)}</td>
+                        </tr>`).join('')}
+                </tbody>
+            </table>`;
+
+        document.getElementById('ownership-note').textContent =
+            deposits.map(d => `${d.label}: i ${usd(d.amountUSD)} sono divisi ` +
+                Object.entries(d.split || {}).map(([n, p]) => `${n} ${p}%`).join(', ') + '. ').join('') +
+            `Il resto del valore di oggi (${usd(geodSide)}) è diviso in parti uguali.`;
+        document.getElementById('ownership-card').hidden = false;
+    },
+
     // One plain sentence for friends who only read the top of the page.
     updateHeadline() {
         const entries = this.state.rawEntries;
@@ -221,9 +268,9 @@ const App = {
         const stale = last && Date.now() / 1000 - last.timestamp > 2 * 86400;
 
         document.getElementById('investment-headline').innerHTML =
-            `In the last 30 days the miners earned <strong>${Utils.formatNumber(mined, 0)} GEOD</strong>` +
+            `Negli ultimi 30 giorni i miner hanno guadagnato <strong>${Utils.formatNumber(mined, 0)} GEOD</strong>` +
             ` (≈ $${Utils.formatNumber(value, 0)}).` +
-            (last ? ` <span class="${stale ? 'warn' : ''}">Last payout ${Utils.timeAgo(last.timestamp)}.</span>` : '');
+            (last ? ` <span class="${stale ? 'warn' : ''}">Ultimo pagamento ${Utils.timeAgo(last.timestamp)}.</span>` : '');
     },
 
     updateInvestmentUI() {
@@ -239,13 +286,13 @@ const App = {
 
         document.getElementById('invested-value').textContent = invested ? usd(invested) : '--';
         document.getElementById('invested-breakdown').innerHTML = invested
-            ? [`Miners: ${usd(minersUSD)}`, ...deposits.map(d => `${d.label}: ${usd(d.amountUSD)}`)]
+            ? [`Miner: ${usd(minersUSD)}`, ...deposits.map(d => `${d.label}: ${usd(d.amountUSD)}`)]
                 .map(line => `<div>${line}</div>`).join('')
             : '';
         document.getElementById('investment-note').textContent =
-            `Miners: ${CONFIG.investment.description}, converted to dollars at today's exchange rate. ` +
-            deposits.map(d => `${d.label}: dollars added from another wallet. `).join('') +
-            `"Worth today" is the GEOD and USDC in the wallet at today's prices; the miners themselves are not counted.`;
+            `Miner: ${CONFIG.investment.description}, convertiti in dollari al cambio di oggi. ` +
+            deposits.map(d => `${d.label}: dollari aggiunti da un altro wallet. `).join('') +
+            `"Valore oggi" sono i GEOD e gli USDC nel wallet ai prezzi di oggi; i miner stessi non sono conteggiati.`;
 
         if (!worth || !invested) return;
 
@@ -253,11 +300,13 @@ const App = {
 
         if (this.state.mined && this.state.price) {
             const since = new Date(this.state.minedSince * 1000)
-                .toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                .toLocaleDateString('it-IT', { month: 'short', year: 'numeric' });
             document.getElementById('investment-mined').innerHTML =
-                `Mined since ${since}: <strong>${Utils.formatNumber(this.state.mined, 0)} GEOD</strong>` +
-                ` (≈ ${usd(this.state.mined * this.state.price)} at today's price)`;
+                `Minati da ${since}: <strong>${Utils.formatNumber(this.state.mined, 0)} GEOD</strong>` +
+                ` (≈ ${usd(this.state.mined * this.state.price)} al prezzo di oggi)`;
         }
+
+        this.updateOwnershipUI(worth, minersUSD);
 
         const result = worth - invested;
         const percent = (result / invested) * 100;
@@ -275,7 +324,7 @@ const App = {
         const ctx = document.getElementById('combined-chart').getContext('2d');
         const font = (size) => ({ family: "'JetBrains Mono'", size });
         const grid = { color: 'rgba(42, 42, 42, 0.5)', drawBorder: false };
-        const usd = (v) => '$' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(v < 10 ? 2 : 0));
+        const usd = (v) => '$' + (v >= 1000 ? Utils.formatNumber(v / 1000, 1) + 'k' : Utils.formatNumber(v, v < 10 ? 2 : 0));
 
         this.chart = new Chart(ctx, {
             type: 'bar',
@@ -284,7 +333,7 @@ const App = {
                 datasets: [
                     {
                         type: 'line',
-                        label: 'GEOD price',
+                        label: 'Prezzo GEOD',
                         data: [],
                         borderColor: '#ff6b35',
                         backgroundColor: 'transparent',
@@ -297,7 +346,7 @@ const App = {
                     },
                     {
                         type: 'line',
-                        label: 'Portfolio value',
+                        label: 'Valore portafoglio',
                         data: [],
                         borderColor: '#a855f7',
                         backgroundColor: 'rgba(168, 85, 247, 0.1)',
@@ -311,7 +360,7 @@ const App = {
                     },
                     {
                         type: 'bar',
-                        label: 'GEOD mined',
+                        label: 'GEOD minati',
                         data: [],
                         backgroundColor: 'rgba(0, 255, 136, 0.35)',
                         borderColor: 'rgba(0, 255, 136, 0.7)',
@@ -341,9 +390,9 @@ const App = {
                         callbacks: {
                             label: (context) => {
                                 const v = context.parsed.y;
-                                if (context.datasetIndex === 0) return `GEOD price: $${v.toFixed(4)}`;
-                                if (context.datasetIndex === 1) return `Portfolio: $${Utils.formatNumber(v, 0)}`;
-                                return `Mined: +${Utils.formatNumber(v, 2)} GEOD`;
+                                if (context.datasetIndex === 0) return `Prezzo GEOD: $${Utils.formatNumber(v, 4)}`;
+                                if (context.datasetIndex === 1) return `Portafoglio: $${Utils.formatNumber(v, 0)}`;
+                                return `Minati: +${Utils.formatNumber(v, 2)} GEOD`;
                             }
                         }
                     }
@@ -358,7 +407,7 @@ const App = {
                         position: 'left',
                         grid,
                         ticks: { color: '#a855f7', font: font(10), callback: usd },
-                        title: { display: true, text: 'PORTFOLIO $', color: '#a855f7', font: font(10) }
+                        title: { display: true, text: 'PORTAFOGLIO $', color: '#a855f7', font: font(10) }
                     },
                     y1: {
                         type: 'linear',
@@ -366,15 +415,15 @@ const App = {
                         beginAtZero: true,
                         grid: { display: false },
                         ticks: { color: '#00ff88', font: font(10) },
-                        title: { display: true, text: 'GEOD MINED', color: '#00ff88', font: font(10) }
+                        title: { display: true, text: 'GEOD MINATI', color: '#00ff88', font: font(10) }
                     },
                     y2: {
                         type: 'linear',
                         position: 'right',
                         display: false,
                         grid: { display: false },
-                        ticks: { color: '#ff6b35', font: font(10), callback: (v) => '$' + v.toFixed(2) },
-                        title: { display: true, text: 'PRICE $', color: '#ff6b35', font: font(10) }
+                        ticks: { color: '#ff6b35', font: font(10), callback: (v) => '$' + Utils.formatNumber(v, 2) },
+                        title: { display: true, text: 'PREZZO $', color: '#ff6b35', font: font(10) }
                     }
                 }
             }
@@ -393,7 +442,7 @@ const App = {
         const loadingEl = document.getElementById('combined-chart-loading');
         const summaryEl = document.getElementById('combined-summary');
 
-        loadingEl.textContent = 'Loading...';
+        loadingEl.textContent = 'Caricamento...';
         loadingEl.style.display = 'block';
         summaryEl.innerHTML = '';
 
@@ -402,8 +451,8 @@ const App = {
         try {
             const [priceHistory] = await Promise.all([API.getGEODPriceHistory(days), this.activityReady]);
             if (this.state.chartDays !== days) return;
-            if (!priceHistory || priceHistory.length === 0) throw new Error('No price data');
-            if (!this.state.rawEntries) throw new Error('Transactions unavailable');
+            if (!priceHistory || priceHistory.length === 0) throw new Error('Prezzi non disponibili');
+            if (!this.state.rawEntries) throw new Error('Movimenti non disponibili');
 
             const priceByDay = {};
             for (const [ms, price] of priceHistory) {
@@ -456,7 +505,7 @@ const App = {
                 const slice = dayList.slice(Math.max(0, i - bucketSize), i);
                 const last = slice[slice.length - 1];
                 buckets.unshift({
-                    label: new Date(last.start * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                    label: new Date(last.start * 1000).toLocaleDateString('it-IT', { month: 'short', day: 'numeric' }),
                     value: last.value,
                     price: last.price,
                     mined: slice.reduce((sum, d) => sum + d.mined, 0)
@@ -469,7 +518,7 @@ const App = {
             this.chart.data.datasets[2].data = buckets.map(b => b.mined);
             // Keep the bars in the bottom third so the portfolio line stays readable.
             this.chart.options.scales.y1.max = Math.ceil(Math.max(...buckets.map(b => b.mined), 1) * 3);
-            this.chart.options.scales.y1.title.text = bucketSize > 1 ? 'GEOD MINED / WEEK' : 'GEOD MINED / DAY';
+            this.chart.options.scales.y1.title.text = bucketSize > 1 ? 'GEOD MINATI / SETTIMANA' : 'GEOD MINATI / GIORNO';
             this.updateChartVisibility();
             loadingEl.style.display = 'none';
 
@@ -483,29 +532,29 @@ const App = {
 
             summaryEl.innerHTML = `
                 <div class="tx-summary-item">
-                    <div class="tx-summary-label">MINED IN PERIOD</div>
+                    <div class="tx-summary-label">MINATI NEL PERIODO</div>
                     <div class="tx-summary-value rewards">${Utils.formatNumber(mined, 0)} GEOD</div>
                 </div>
                 <div class="tx-summary-item">
-                    <div class="tx-summary-label">MINED VALUE TODAY</div>
+                    <div class="tx-summary-label">VALORE OGGI</div>
                     <div class="tx-summary-value portfolio">$${Utils.formatNumber(mined * (this.state.price || 0), 0)}</div>
                 </div>
                 <div class="tx-summary-item">
-                    <div class="tx-summary-label">AVERAGE PER DAY</div>
+                    <div class="tx-summary-label">MEDIA AL GIORNO</div>
                     <div class="tx-summary-value rewards">${Utils.formatNumber(mined / days, 1)} GEOD</div>
                 </div>
                 <div class="tx-summary-item">
-                    <div class="tx-summary-label">PORTFOLIO CHANGE</div>
+                    <div class="tx-summary-label">VARIAZIONE PORTAFOGLIO</div>
                     <div class="tx-summary-value ${change >= 0 ? 'rewards' : 'negative'}">${sign}$${Utils.formatNumber(Math.abs(change), 0)} (${Utils.formatChange(changePct)})</div>
                 </div>
                 <div class="tx-summary-item">
-                    <div class="tx-summary-label">LAST PAYOUT</div>
+                    <div class="tx-summary-label">ULTIMO PAGAMENTO</div>
                     <div class="tx-summary-value rewards">${lastReward ? Utils.timeAgo(lastReward.timestamp) : '--'}</div>
                 </div>
             `;
         } catch (error) {
             console.error('Failed to load chart data:', error);
-            loadingEl.innerHTML = 'Chart data unavailable<br><small style="color: var(--text-muted)">' + error.message + '</small>';
+            loadingEl.innerHTML = 'Grafico non disponibile<br><small style="color: var(--text-muted)">' + error.message + '</small>';
             loadingEl.style.display = 'block';
         }
     },
@@ -533,7 +582,7 @@ const App = {
             console.error('Failed to load transactions:', error);
             if (this.state.activity.length === 0) {
                 document.getElementById('transactions-list').innerHTML =
-                    '<div class="tx-empty">Transactions unavailable right now</div>';
+                    '<div class="tx-empty">Movimenti non disponibili al momento</div>';
             }
         }
     },
@@ -565,7 +614,7 @@ const App = {
         const geod = Utils.formatNumber(Math.abs(entry.geod), 2) + ' GEOD';
         const usdc = Utils.formatNumber(Math.abs(entry.usdc), 2) + ' USDC';
         const geodNow = this.state.price
-            ? '≈ $' + Utils.formatNumber(Math.abs(entry.geod) * this.state.price, 2) + ' today'
+            ? '≈ $' + Utils.formatNumber(Math.abs(entry.geod) * this.state.price, 2) + ' oggi'
             : '';
 
         const count = entry.payouts?.length > 1 ? entry.payouts.length : 0;
@@ -573,46 +622,46 @@ const App = {
         switch (entry.kind) {
             case 'reward':
                 return {
-                    title: count ? 'Mining rewards' : 'Mining reward',
-                    note: count ? `${count} payouts` : 'Earned by the miners',
+                    title: count ? 'Ricompense mining' : 'Ricompensa mining',
+                    note: count ? `${count} pagamenti` : 'Guadagnata dai miner',
                     amount: '+' + geod, sub: geodNow, dir: 'incoming'
                 };
             case 'migrate-out':
                 return {
-                    title: 'Moved to Solana',
-                    note: (count ? `${count} transfers` : 'Sent') + ' to the GEODNET bridge',
+                    title: 'Spostati su Solana',
+                    note: (count ? `${count} trasferimenti` : 'Inviati') + ' al bridge GEODNET',
                     amount: '-' + geod, sub: '', dir: 'swap'
                 };
             case 'migrate-in':
                 return {
-                    title: 'Arrived on Solana',
-                    note: (count ? `${count} transfers` : 'Received') + ' from the old Polygon wallet',
+                    title: 'Arrivati su Solana',
+                    note: (count ? `${count} trasferimenti` : 'Ricevuti') + ' dal vecchio wallet Polygon',
                     amount: '+' + geod, sub: '', dir: 'swap'
                 };
             case 'sell':
                 return {
-                    title: 'Sold GEOD',
-                    note: 'Converted to USDC (digital dollars)',
+                    title: 'Venduti GEOD',
+                    note: 'Convertiti in USDC (dollari digitali)',
                     amount: entry.geod ? '-' + geod : '+' + usdc,
-                    sub: entry.geod && entry.usdc ? 'for ' + usdc : '', dir: 'swap'
+                    sub: entry.geod && entry.usdc ? 'per ' + usdc : '', dir: 'swap'
                 };
             case 'buy':
                 return {
-                    title: 'Bought GEOD',
-                    note: 'Paid with USDC (digital dollars)',
+                    title: 'Comprati GEOD',
+                    note: 'Pagati con USDC (dollari digitali)',
                     amount: entry.geod ? '+' + geod : '-' + usdc,
                     sub: entry.geod && entry.usdc ? 'for ' + usdc : '', dir: 'swap'
                 };
             case 'geod-in':
-                return { title: 'GEOD received', note: 'Transfer into the wallet', amount: '+' + geod, sub: geodNow, dir: 'incoming' };
+                return { title: 'GEOD ricevuti', note: 'Trasferimento in entrata', amount: '+' + geod, sub: geodNow, dir: 'incoming' };
             case 'geod-out':
-                return { title: 'GEOD sent', note: 'Transfer out of the wallet', amount: '-' + geod, sub: geodNow, dir: 'outgoing' };
+                return { title: 'GEOD inviati', note: 'Trasferimento in uscita', amount: '-' + geod, sub: geodNow, dir: 'outgoing' };
             case 'deposit':
-                return { title: 'Deposit', note: entry.depositLabel, amount: '+' + usdc, sub: '', dir: 'incoming' };
+                return { title: 'Deposito', note: entry.depositLabel, amount: '+' + usdc, sub: '', dir: 'incoming' };
             case 'usdc-in':
-                return { title: 'USDC received', note: 'Digital dollars added', amount: '+' + usdc, sub: '', dir: 'incoming' };
+                return { title: 'USDC ricevuti', note: 'Dollari digitali aggiunti', amount: '+' + usdc, sub: '', dir: 'incoming' };
             default:
-                return { title: 'USDC sent', note: 'Digital dollars withdrawn', amount: '-' + usdc, sub: '', dir: 'outgoing' };
+                return { title: 'USDC inviati', note: 'Dollari digitali prelevati', amount: '-' + usdc, sub: '', dir: 'outgoing' };
         }
     },
 
@@ -623,24 +672,24 @@ const App = {
 
         const oldest = entries[entries.length - 1];
         document.getElementById('tx-count').textContent = oldest
-            ? 'SINCE ' + new Date((oldest.firstTimestamp || oldest.timestamp) * 1000)
-                .toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase()
+            ? 'DA ' + new Date((oldest.firstTimestamp || oldest.timestamp) * 1000)
+                .toLocaleDateString('it-IT', { month: 'short', year: 'numeric' }).toUpperCase()
             : '';
 
         if (entries.length === 0) {
-            listEl.innerHTML = '<div class="tx-empty">No transactions yet</div>';
+            listEl.innerHTML = '<div class="tx-empty">Ancora nessun movimento</div>';
             moreEl.hidden = true;
             return;
         }
 
         const formatDay = (timestamp, withYear = true) =>
-            new Date(timestamp * 1000).toLocaleDateString('en-US', {
+            new Date(timestamp * 1000).toLocaleDateString('it-IT', {
                 month: 'short', day: 'numeric', ...(withYear && { year: 'numeric' })
             });
         const explorer = { solana: 'https://solscan.io/tx/', polygon: 'https://polygonscan.com/tx/' };
         const proofLink = (chain, signature) => `
             <a class="tx-link" href="${explorer[chain]}${signature}" target="_blank" rel="noopener"
-               title="See this transaction on the public blockchain">PROOF ↗</a>`;
+               title="Vedi questa transazione sulla blockchain pubblica">PROVA ↗</a>`;
 
         listEl.innerHTML = entries.slice(0, this.state.activityShown).map(entry => {
             const tx = this.describeTransaction(entry);
@@ -673,7 +722,7 @@ const App = {
 
             return `
                 <details class="tx-group">
-                    <summary class="tx-item ${tx.dir}">${row}<span class="tx-link tx-toggle">DETAILS</span></summary>
+                    <summary class="tx-item ${tx.dir}">${row}<span class="tx-link tx-toggle">DETTAGLI</span></summary>
                     <div class="tx-payouts">${payouts}</div>
                 </details>`;
         }).join('');

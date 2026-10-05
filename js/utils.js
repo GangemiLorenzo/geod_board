@@ -1,12 +1,13 @@
 const Utils = {
     formatPrice(value, decimals = 4) {
         if (value === null || value === undefined) return '--';
-        return '$' + parseFloat(value).toFixed(decimals);
+        return '$' + Utils.formatNumber(value, decimals);
     },
 
     formatNumber(value, decimals = 2) {
         if (value === null || value === undefined) return '--';
-        return parseFloat(value).toLocaleString('en-US', {
+        return parseFloat(value).toLocaleString('it-IT', {
+            useGrouping: 'always',
             minimumFractionDigits: decimals,
             maximumFractionDigits: decimals
         });
@@ -15,7 +16,7 @@ const Utils = {
     formatChange(value) {
         if (value === null || value === undefined) return '--';
         const sign = value >= 0 ? '+' : '';
-        return sign + parseFloat(value).toFixed(2) + '%';
+        return sign + Utils.formatNumber(value, 2) + '%';
     },
 
     formatBalance(value, decimals = 4) {
@@ -25,7 +26,7 @@ const Utils = {
 
     formatTimestamp(timestamp) {
         const date = new Date(timestamp * 1000);
-        return date.toLocaleString('en-US', {
+        return date.toLocaleString('it-IT', {
             month: 'short',
             day: '2-digit',
             hour: '2-digit',
@@ -38,7 +39,7 @@ const Utils = {
         if (typeof date === 'number') {
             date = new Date(date);
         }
-        return date.toLocaleString('en-US', {
+        return date.toLocaleString('it-IT', {
             year: 'numeric',
             month: 'short',
             day: '2-digit',
@@ -50,9 +51,9 @@ const Utils = {
 
     timeAgo(timestamp) {
         const hours = Math.floor((Date.now() / 1000 - timestamp) / 3600);
-        if (hours < 1) return 'just now';
-        if (hours < 48) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
-        return Math.floor(hours / 24) + ' days ago';
+        if (hours < 1) return 'pochi minuti fa';
+        if (hours < 48) return hours + (hours === 1 ? ' ora fa' : ' ore fa');
+        return Math.floor(hours / 24) + ' giorni fa';
     },
 
     shortenAddress(address, chars = 6) {

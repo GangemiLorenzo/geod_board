@@ -8,14 +8,22 @@ const CONFIG = {
     ],
     investment: {
         amountEUR: 1765,
-        description: '2 miners (€920 + €845)',
+        description: '2 miner (920 € + 845 €)',
         // Money added later from other sources; shown separately because it
         // is split between the partners differently from the miners.
         deposits: [
             // Arrived on the Solana wallet; the matching incoming USDC transfer
             // is labelled as this deposit in the transactions list.
-            { label: 'From HNT profits', amountUSD: 1155, chain: 'solana' }
-        ]
+            {
+                label: 'Da profitti HNT',
+                amountUSD: 1155,
+                chain: 'solana',
+                // Percentages of this amount owned by each partner.
+                split: { Mattia: 42, Marco: 33, Lorenzo: 25 }
+            }
+        ],
+        // Everything else (the GEOD side) is split equally between these.
+        partners: ['Mattia', 'Marco', 'Lorenzo']
     },
     polygon: {
         // Old wallet, used until the move to Solana on 19 Sep 2025.
