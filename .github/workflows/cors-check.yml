@@ -1,0 +1,17 @@
+name: CORS check (temporary)
+on:
+  push:
+    branches: [claude/project-overview-qto3xg]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for u in \
+            "https://polygon.blockscout.com/api/v2/tokens/0xac0f66379a6d7801d7726d5a943356a172549adb" \
+            "https://polygon.blockscout.com/api/v2/addresses/0xac0f66379a6d7801d7726d5a943356a172549adb/token-transfers?type=ERC-20&token=0xac0f66379a6d7801d7726d5a943356a172549adb" \
+            "https://polygon.blockscout.com/api/v2/addresses/0xac0f66379a6d7801d7726d5a943356a172549adb/internal-transactions"; do
+            echo "== $u"
+            curl -s -D - -o /tmp/body -H "Origin: https://gangemilorenzo.github.io" "$u" | grep -i -E "^HTTP|access-control|ratelimit|x-ratelimit"
+            head -c 300 /tmp/body; echo
+          done
