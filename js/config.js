@@ -12,7 +12,9 @@ const CONFIG = {
         // Money added later from other sources; shown separately because it
         // is split between the partners differently from the miners.
         deposits: [
-            { label: 'From HNT profits', amountUSD: 1155 }
+            // Arrived on the Solana wallet; the matching incoming USDC transfer
+            // is labelled as this deposit in the transactions list.
+            { label: 'From HNT profits', amountUSD: 1155, chain: 'solana' }
         ]
     },
     polygon: {

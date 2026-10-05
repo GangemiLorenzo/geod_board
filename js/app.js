@@ -607,6 +607,8 @@ const App = {
                 return { title: 'GEOD received', note: 'Transfer into the wallet', amount: '+' + geod, sub: geodNow, dir: 'incoming' };
             case 'geod-out':
                 return { title: 'GEOD sent', note: 'Transfer out of the wallet', amount: '-' + geod, sub: geodNow, dir: 'outgoing' };
+            case 'deposit':
+                return { title: 'Deposit', note: entry.depositLabel, amount: '+' + usdc, sub: '', dir: 'incoming' };
             case 'usdc-in':
                 return { title: 'USDC received', note: 'Digital dollars added', amount: '+' + usdc, sub: '', dir: 'incoming' };
             default:

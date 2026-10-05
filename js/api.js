@@ -203,7 +203,7 @@ const API = {
     async getWalletActivity() {
         const [geodTxs, usdcTxs] = await Promise.all([
             this.getTokenAccountHistory(CONFIG.geodMint, 10),
-            this.getTokenAccountHistory(CONFIG.usdcMint)
+            this.getTokenAccountHistory(CONFIG.usdcMint, 5)
         ]);
 
         const bySignature = new Map();
@@ -313,6 +313,19 @@ const API = {
             } else if (entry.kind === 'geod-in' && entry.chain === 'solana' &&
                 Math.abs(entry.timestamp - CONFIG.polygon.migratedAt) < 3 * 86400) {
                 entry.kind = 'migrate-in';
+            }
+        }
+
+        // Known deposits: the incoming USDC transfer closest to the stated amount
+        // (within 2%) is shown as that deposit.
+        for (const deposit of CONFIG.investment.deposits || []) {
+            const match = entries
+                .filter(e => e.kind === 'usdc-in' && e.chain === deposit.chain &&
+                    Math.abs(e.usdc - deposit.amountUSD) <= deposit.amountUSD * 0.02)
+                .sort((a, b) => Math.abs(a.usdc - deposit.amountUSD) - Math.abs(b.usdc - deposit.amountUSD))[0];
+            if (match) {
+                match.kind = 'deposit';
+                match.depositLabel = deposit.label;
             }
         }
 
