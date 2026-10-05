@@ -22,7 +22,9 @@ async function fetchAll(source, action) {
         const res = await fetch(url);
         if (!res.ok) throw new Error(`${source.name} ${action}: HTTP ${res.status}`);
         const body = await res.json();
-        if (body.status !== '1') {
+        // Blockscout returns status 0 with a warning (but complete rows) when
+        // some blocks' internal transactions are still being indexed.
+        if (body.status !== '1' && !(Array.isArray(body.result) && body.result.length > 0)) {
             if (/no (transactions|token transfers|internal transactions) found/i.test(body.message || '') ||
                 (Array.isArray(body.result) && body.result.length === 0)) break;
             throw new Error(`${source.name} ${action}: ${body.message} ${JSON.stringify(body.result).slice(0, 200)}`);

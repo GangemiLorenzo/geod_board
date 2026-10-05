@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Fetch Polygon wallet history
         env:
           POLYGON_WALLET: '0xB248DBe3be3Ab0Cc8D6dc0FeF836502d62c1fD95'
