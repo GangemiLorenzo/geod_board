@@ -35,6 +35,38 @@ async function fetchAll(source, action) {
     return rows;
 }
 
+async function fetchTokenTransfersV2() {
+    try {
+        const rows = new Map();
+        let params = '';
+        for (let page = 0; page < 200; page++) {
+            const res = await fetch(`https://polygon.blockscout.com/api/v2/addresses/${address}/token-transfers?type=ERC-20${params}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const body = await res.json();
+            for (const t of body.items || []) {
+                const hash = t.transaction_hash || t.tx_hash;
+                rows.set(`${hash}:${t.log_index}`, {
+                    hash,
+                    logIndex: +t.log_index,
+                    timeStamp: Math.floor(Date.parse(t.timestamp) / 1000),
+                    from: t.from.hash.toLowerCase(),
+                    to: t.to.hash.toLowerCase(),
+                    contractAddress: (t.token.address_hash || t.token.address).toLowerCase(),
+                    tokenSymbol: t.token.symbol,
+                    tokenDecimal: t.total.decimals ?? t.token.decimals,
+                    value: t.total.value
+                });
+            }
+            if (!body.next_page_params) break;
+            params = '&' + new URLSearchParams(body.next_page_params).toString();
+        }
+        return [...rows.values()].sort((a, b) => a.timeStamp - b.timeStamp);
+    } catch (error) {
+        console.error('v2 API failed:', error.message);
+        return null;
+    }
+}
+
 let snapshot;
 for (const source of sources) {
     try {
@@ -51,14 +83,20 @@ for (const source of sources) {
                 .map(t => ({ hash: t.hash || t.transactionHash, timeStamp: +t.timeStamp, from: t.from, to: t.to, value: t.value, internal: true }))
         ];
 
-        // Pages can overlap, so drop repeated log entries.
-        const seen = new Set();
-        const uniqueTokens = tokens.filter(t => {
-            const key = `${t.hash}:${t.logIndex}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
+        // Prefer Blockscout's v2 API: it includes log indexes, so repeated
+        // rows can be dropped without merging distinct transfers.
+        let uniqueTokens = source.name === 'blockscout' ? await fetchTokenTransfersV2() : null;
+        if (uniqueTokens) {
+            console.log(`v2 API: ${uniqueTokens.length} token transfers (v1 API: ${tokens.length})`);
+        } else {
+            const seen = new Set();
+            uniqueTokens = tokens.filter(t => {
+                const key = `${t.hash}:${t.logIndex ?? ''}:${t.from}:${t.to}:${t.contractAddress}:${t.value}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        }
 
         const balances = {};
         for (const contract of [...new Set(uniqueTokens.map(t => t.contractAddress.toLowerCase()))]) {
@@ -76,7 +114,7 @@ for (const source of sources) {
             balances,
             tokenTransfers: uniqueTokens.map(t => ({
                 hash: t.hash,
-                logIndex: +t.logIndex,
+                logIndex: t.logIndex === '' || t.logIndex == null ? null : +t.logIndex,
                 timeStamp: +t.timeStamp,
                 from: t.from,
                 to: t.to,
@@ -87,6 +125,12 @@ for (const source of sources) {
             })),
             nativeTransfers: native
         };
+        for (const [contract, raw] of Object.entries(balances)) {
+            if (contract === 'native') continue;
+            const rows = uniqueTokens.filter(t => t.contractAddress.toLowerCase() === contract);
+            const net = rows.reduce((sum, t) => sum + (t.to === address ? 1n : t.from === address ? -1n : 0n) * BigInt(t.value), 0n);
+            console.log(`check ${rows[0]?.tokenSymbol}: on-chain ${raw}, from transfers ${net}`);
+        }
         console.log(`${source.name}: ${uniqueTokens.length} token transfers, ${native.length} POL transfers`);
         break;
     } catch (error) {
