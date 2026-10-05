@@ -195,6 +195,24 @@ body {
     color: var(--accent-negative);
 }
 
+.investment-headline {
+    font-size: 0.95rem;
+    margin-bottom: 1.25rem;
+    line-height: 1.6;
+}
+
+.investment-headline:empty {
+    display: none;
+}
+
+.investment-headline strong {
+    color: var(--accent-secondary);
+}
+
+.investment-headline .warn {
+    color: var(--accent-primary);
+}
+
 .investment-mined {
     margin-top: 1.25rem;
     padding-top: 1rem;
@@ -448,6 +466,7 @@ body {
 .tx-summary-value.price { color: #ff6b35; }
 .tx-summary-value.portfolio { color: #a855f7; }
 .tx-summary-value.rewards { color: var(--accent-secondary); }
+.tx-summary-value.negative { color: var(--accent-negative); }
 
 .tx-count {
     font-size: 0.75rem;

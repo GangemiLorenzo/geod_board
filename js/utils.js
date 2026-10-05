@@ -48,6 +48,13 @@ const Utils = {
         });
     },
 
+    timeAgo(timestamp) {
+        const hours = Math.floor((Date.now() / 1000 - timestamp) / 3600);
+        if (hours < 1) return 'just now';
+        if (hours < 48) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
+        return Math.floor(hours / 24) + ' days ago';
+    },
+
     shortenAddress(address, chars = 6) {
         if (!address) return '--';
         return address.slice(0, chars) + '...' + address.slice(-chars);

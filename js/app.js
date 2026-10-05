@@ -8,7 +8,7 @@ const App = {
         portfolioValueEUR: null,
         chartDays: 90,
         datasets: {
-            price: true,
+            price: false,
             portfolio: true,
             rewards: true
         },
@@ -18,6 +18,8 @@ const App = {
         },
         activity: [],
         polygonActivity: null,
+        rawEntries: null,
+        eurRate: null,
         mined: null,
         minedSince: null,
         activityShown: 15,
@@ -84,8 +86,8 @@ const App = {
         this.initChart();
         this.renderLegend();
         await this.refresh();
+        if (!this.activityReady) this.activityReady = this.loadTransactions();
         this.loadChartData(this.state.chartDays);
-        if (!this.state.activityLoadedAt) this.loadTransactions();
         this.startAutoRefresh();
     },
 
@@ -110,15 +112,15 @@ const App = {
         container.innerHTML = `
             <div class="legend-item price ${this.state.datasets.price ? '' : 'disabled'}" data-dataset="price">
                 <div class="legend-color"></div>
-                <span class="legend-label">PRICE INDEX</span>
+                <span class="legend-label">GEOD PRICE</span>
             </div>
             <div class="legend-item portfolio ${this.state.datasets.portfolio ? '' : 'disabled'}" data-dataset="portfolio">
                 <div class="legend-color"></div>
-                <span class="legend-label">PORTFOLIO INDEX</span>
+                <span class="legend-label">PORTFOLIO VALUE</span>
             </div>
             <div class="legend-item rewards ${this.state.datasets.rewards ? '' : 'disabled'}" data-dataset="rewards">
                 <div class="legend-color"></div>
-                <span class="legend-label">DAILY NET FLOW (GEOD)</span>
+                <span class="legend-label">GEOD MINED</span>
             </div>
         `;
         
@@ -138,6 +140,9 @@ const App = {
         this.chart.data.datasets[0].hidden = !this.state.datasets.price;
         this.chart.data.datasets[1].hidden = !this.state.datasets.portfolio;
         this.chart.data.datasets[2].hidden = !this.state.datasets.rewards;
+        this.chart.options.scales.y2.display = this.state.datasets.price;
+        this.chart.options.scales.y1.display = this.state.datasets.rewards;
+        this.chart.options.scales.y.display = this.state.datasets.portfolio;
         this.chart.update();
     },
 
@@ -168,6 +173,7 @@ const App = {
             this.state.usdcBalance = data.usdcBalance;
             this.state.portfolioValue = data.portfolioValue;
             this.state.portfolioValueEUR = data.portfolioValueEUR;
+            this.state.eurRate = data.eurRate;
 
             this.updatePriceUI();
             this.updatePortfolioUI();
@@ -176,7 +182,7 @@ const App = {
             this.updateLastUpdate();
 
             if (Date.now() - this.state.activityLoadedAt > CONFIG.activityRefreshInterval) {
-                this.loadTransactions();
+                this.activityReady = this.loadTransactions();
             }
             
         } catch (error) {
@@ -189,21 +195,45 @@ const App = {
     },
 
     updatePriceUI() {
-        document.getElementById('geod-price').textContent = Utils.formatPrice(this.state.price);
+        const eur = this.state.eurRate;
+        document.getElementById('geod-price').textContent = eur
+            ? '€' + (this.state.price * eur).toFixed(4)
+            : Utils.formatPrice(this.state.price);
+        document.getElementById('geod-price-usd').textContent = eur ? '≈ ' + Utils.formatPrice(this.state.price) : '';
         const changeEl = document.getElementById('geod-change');
         changeEl.textContent = Utils.formatChange(this.state.change24h) + ' (24h)';
         changeEl.className = 'card-change ' + (this.state.change24h >= 0 ? 'positive' : 'negative');
     },
 
     updatePortfolioUI() {
-        document.getElementById('portfolio-value').textContent = Utils.formatPrice(this.state.portfolioValue, 2);
+        document.getElementById('portfolio-value').textContent = this.state.portfolioValueEUR
+            ? '€' + Utils.formatNumber(this.state.portfolioValueEUR, 2)
+            : Utils.formatPrice(this.state.portfolioValue, 2);
         document.getElementById('geod-balance').textContent = Utils.formatNumber(this.state.geodBalance, 4) + ' GEOD';
         document.getElementById('usdc-balance').textContent = Utils.formatNumber(this.state.usdcBalance, 2) + ' USDC';
         const eurEl = document.getElementById('portfolio-eur');
         if (this.state.portfolioValueEUR) {
-            eurEl.textContent = '≈ ' + Utils.formatNumber(this.state.portfolioValueEUR, 2) + ' EUR';
+            eurEl.textContent = '≈ $' + Utils.formatNumber(this.state.portfolioValue, 2);
         }
         this.updateInvestmentUI();
+    },
+
+    // One plain sentence for friends who only read the top of the page.
+    updateHeadline() {
+        const entries = this.state.rawEntries;
+        if (!entries || !this.state.price || !this.state.eurRate) return;
+
+        const monthAgo = Date.now() / 1000 - 30 * 86400;
+        const rewards = entries.filter(e => e.kind === 'reward');
+        const mined = rewards.filter(e => e.timestamp >= monthAgo).reduce((sum, e) => sum + e.geod, 0);
+        const value = mined * this.state.price * this.state.eurRate;
+        const last = rewards[0];
+        const stale = last && Date.now() / 1000 - last.timestamp > 2 * 86400;
+
+        document.getElementById('investment-headline').innerHTML =
+            `In the last 30 days the miners earned <strong>${Utils.formatNumber(mined, 0)} GEOD</strong>` +
+            ` (≈ €${Utils.formatNumber(value, 0)}).` +
+            (last ? ` <span class="${stale ? 'warn' : ''}">Last payout ${Utils.timeAgo(last.timestamp)}.</span>` : '');
     },
 
     updateInvestmentUI() {
@@ -216,6 +246,8 @@ const App = {
             `${CONFIG.investment.description}. "Worth today" is the GEOD and USDC in the wallet at today's prices; the miners themselves are not counted.`;
 
         if (!worth) return;
+
+        this.updateHeadline();
 
         if (this.state.mined && this.state.price) {
             const eurPerUsd = worth / this.state.portfolioValue;
@@ -240,7 +272,10 @@ const App = {
 
     initChart() {
         const ctx = document.getElementById('combined-chart').getContext('2d');
-        
+        const font = (size) => ({ family: "'JetBrains Mono'", size });
+        const grid = { color: 'rgba(42, 42, 42, 0.5)', drawBorder: false };
+        const euro = (v) => '€' + (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(v < 10 ? 2 : 0));
+
         this.chart = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -248,7 +283,7 @@ const App = {
                 datasets: [
                     {
                         type: 'line',
-                        label: 'Price (USD)',
+                        label: 'GEOD price',
                         data: [],
                         borderColor: '#ff6b35',
                         backgroundColor: 'transparent',
@@ -256,12 +291,12 @@ const App = {
                         tension: 0.3,
                         pointRadius: 0,
                         pointHoverRadius: 4,
-                        yAxisID: 'y',
+                        yAxisID: 'y2',
                         order: 1
                     },
                     {
                         type: 'line',
-                        label: 'Portfolio (USD)',
+                        label: 'Portfolio value',
                         data: [],
                         borderColor: '#a855f7',
                         backgroundColor: 'rgba(168, 85, 247, 0.1)',
@@ -275,10 +310,10 @@ const App = {
                     },
                     {
                         type: 'bar',
-                        label: 'Net Flow (GEOD)',
+                        label: 'GEOD mined',
                         data: [],
-                        backgroundColor: 'rgba(0, 255, 136, 0.5)',
-                        borderColor: '#00ff88',
+                        backgroundColor: 'rgba(0, 255, 136, 0.35)',
+                        borderColor: 'rgba(0, 255, 136, 0.7)',
                         borderWidth: 1,
                         borderRadius: 2,
                         yAxisID: 'y1',
@@ -299,193 +334,175 @@ const App = {
                         borderWidth: 1,
                         titleColor: '#666666',
                         bodyColor: '#e0e0e0',
-                        titleFont: { family: "'JetBrains Mono'", size: 11 },
-                        bodyFont: { family: "'JetBrains Mono'", size: 11 },
-                        padding: 12
+                        titleFont: font(11),
+                        bodyFont: font(11),
+                        padding: 12,
+                        callbacks: {
+                            label: (context) => {
+                                const v = context.parsed.y;
+                                if (context.datasetIndex === 0) return `GEOD price: €${v.toFixed(4)}`;
+                                if (context.datasetIndex === 1) return `Portfolio: €${Utils.formatNumber(v, 0)}`;
+                                return `Mined: +${Utils.formatNumber(v, 2)} GEOD`;
+                            }
+                        }
                     }
                 },
                 scales: {
                     x: {
-                        grid: { color: 'rgba(42, 42, 42, 0.5)', drawBorder: false },
-                        ticks: { 
-                            color: '#666666', 
-                            font: { family: "'JetBrains Mono'", size: 9 },
-                            maxTicksLimit: 10,
-                            maxRotation: 45
-                        }
+                        grid,
+                        ticks: { color: '#666666', font: font(9), maxTicksLimit: 8, maxRotation: 0 }
                     },
                     y: {
                         type: 'linear',
                         position: 'left',
-                        grid: { color: 'rgba(42, 42, 42, 0.5)', drawBorder: false },
-                        ticks: { 
-                            color: '#a855f7', 
-                            font: { family: "'JetBrains Mono'", size: 10 },
-                            callback: (v) => '$' + (v >= 1000 ? (v/1000).toFixed(1) + 'k' : v.toFixed(0))
-                        },
-                        title: {
-                            display: true,
-                            text: 'USD',
-                            color: '#a855f7',
-                            font: { family: "'JetBrains Mono'", size: 10 }
-                        }
+                        grid,
+                        ticks: { color: '#a855f7', font: font(10), callback: euro },
+                        title: { display: true, text: 'PORTFOLIO €', color: '#a855f7', font: font(10) }
                     },
                     y1: {
                         type: 'linear',
                         position: 'right',
+                        beginAtZero: true,
                         grid: { display: false },
-                        ticks: { 
-                            color: '#00ff88', 
-                            font: { family: "'JetBrains Mono'", size: 10 },
-                            callback: (v) => v + ' GEOD'
-                        },
-                        title: {
-                            display: true,
-                            text: 'GEOD',
-                            color: '#00ff88',
-                            font: { family: "'JetBrains Mono'", size: 10 }
-                        }
+                        ticks: { color: '#00ff88', font: font(10) },
+                        title: { display: true, text: 'GEOD MINED', color: '#00ff88', font: font(10) }
+                    },
+                    y2: {
+                        type: 'linear',
+                        position: 'right',
+                        display: false,
+                        grid: { display: false },
+                        ticks: { color: '#ff6b35', font: font(10), callback: (v) => '€' + v.toFixed(2) },
+                        title: { display: true, text: 'PRICE €', color: '#ff6b35', font: font(10) }
                     }
                 }
             }
         });
     },
 
+    dayKey(timestamp) {
+        const d = new Date(timestamp * 1000);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    },
+
+    // Rebuilds the wallet's daily GEOD/USDC holdings by walking back from
+    // today's balances through every recorded transaction (both chains; the
+    // move to Solana cancels out), then values them with that day's price.
     async loadChartData(days) {
         const loadingEl = document.getElementById('combined-chart-loading');
         const summaryEl = document.getElementById('combined-summary');
-        
+
         loadingEl.textContent = 'Loading...';
         loadingEl.style.display = 'block';
         summaryEl.innerHTML = '';
-        
+
         this.state.chartDays = days;
-        
+
         try {
-            const [priceHistory, transferHistory] = await Promise.all([
-                API.getGEODPriceHistory(days),
-                API.getAllGEODTransfers(days)
-            ]);
-            
-            if (!priceHistory || priceHistory.length === 0) {
-                throw new Error('No price data');
+            const [priceHistory] = await Promise.all([API.getGEODPriceHistory(days), this.activityReady]);
+            if (this.state.chartDays !== days) return;
+            if (!priceHistory || priceHistory.length === 0) throw new Error('No price data');
+            if (!this.state.rawEntries) throw new Error('Transactions unavailable');
+
+            const eur = this.state.eurRate || 1;
+            const priceByDay = {};
+            for (const [ms, price] of priceHistory) {
+                priceByDay[this.dayKey(ms / 1000)] = price;
             }
-            
-            const flowByDate = {};
-            let totalInflow = 0;
-            
-            for (const t of transferHistory) {
-                flowByDate[t.date] = t.netFlow;
-                totalInflow += t.inFlow || 0;
+
+            // Day list, oldest first, each with its end-of-day timestamp.
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const dayList = [];
+            for (let i = days - 1; i >= 0; i--) {
+                const start = new Date(today);
+                start.setDate(start.getDate() - i);
+                const end = new Date(start);
+                end.setDate(end.getDate() + 1);
+                dayList.push({ key: this.dayKey(start / 1000), start: start / 1000, end: end / 1000 });
             }
-            
-            const priceByDate = {};
-            for (const [timestamp, price] of priceHistory) {
-                const date = new Date(timestamp).toISOString().split('T')[0];
-                if (!priceByDate[date]) {
-                    priceByDate[date] = price;
+
+            const entries = this.state.rawEntries;  // newest first
+            let geod = this.state.geodBalance || 0;
+            let usd = this.state.usdcBalance || 0;
+            let p = 0;
+            for (let i = dayList.length - 1; i >= 0; i--) {
+                while (p < entries.length && entries[p].timestamp >= dayList[i].end) {
+                    geod -= entries[p].geod;
+                    usd -= entries[p].usdc;
+                    p++;
                 }
+                dayList[i].geod = Math.max(geod, 0);
+                dayList[i].usd = Math.max(usd, 0);
             }
-            
-            const currentBalance = this.state.geodBalance || 0;
-            const priceDates = Object.keys(priceByDate).sort();
-            
-            const labels = [];
-            const priceData = [];
-            const portfolioData = [];
-            const rewardsData = [];
-            
-            const priceValues = [];
-            const portfolioValues = [];
-            
-            const totalRewards = transferHistory.reduce((sum, t) => sum + (t.inFlow || 0), 0);
-            let startBalance = currentBalance - totalRewards;
-            if (startBalance < 0) startBalance = 0;
-            
-            for (const date of priceDates) {
-                const price = priceByDate[date];
-                const dailyReward = flowByDate[date] || 0;
-                
-                labels.push(new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-                priceValues.push(price);
-                portfolioValues.push(startBalance * price);
-                rewardsData.push(dailyReward);
-                
-                startBalance += dailyReward;
+
+            const minedByDay = {};
+            for (const e of entries) {
+                if (e.kind === 'reward') minedByDay[this.dayKey(e.timestamp)] = (minedByDay[this.dayKey(e.timestamp)] || 0) + e.geod;
             }
-            
-            const basePrice = priceValues[0] || 1;
-            const basePortfolio = portfolioValues[0] || 1;
-            
-            for (let i = 0; i < priceValues.length; i++) {
-                priceData.push((priceValues[i] / basePrice) * 100);
-                portfolioData.push((portfolioValues[i] / basePortfolio) * 100);
+
+            let lastPrice = priceHistory[0][1];
+            for (const day of dayList) {
+                lastPrice = priceByDay[day.key] ?? lastPrice;
+                day.price = lastPrice;
+                day.value = (day.geod * day.price + day.usd) * eur;
+                day.mined = minedByDay[day.key] || 0;
             }
-            
-            this.state.rawData.prices = priceValues;
-            this.state.rawData.portfolios = portfolioValues;
-            
-            this.chart.data.labels = labels;
-            this.chart.data.datasets[0].data = priceData;
-            this.chart.data.datasets[1].data = portfolioData;
-            this.chart.data.datasets[2].data = rewardsData;
-            
-            this.chart.options.scales.y.title.text = 'INDEX (100 = START)';
-            this.chart.options.scales.y.ticks.callback = (v) => v.toFixed(0);
-            this.chart.options.scales.y.min = undefined;
-            
-            this.chart.options.plugins.tooltip.callbacks.label = (context) => {
-                const label = context.dataset.label;
-                const idx = context.dataIndex;
-                if (label.includes('Price')) {
-                    const actual = this.state.rawData.prices[idx];
-                    return `Price: $${actual.toFixed(4)} (index: ${context.parsed.y.toFixed(0)})`;
-                } else if (label.includes('Portfolio')) {
-                    const actual = this.state.rawData.portfolios[idx];
-                    return `Portfolio: $${actual.toFixed(2)} (index: ${context.parsed.y.toFixed(0)})`;
-                }
-                const flow = context.parsed.y;
-                return flow >= 0 ? `+${flow.toFixed(2)} GEOD` : `${flow.toFixed(2)} GEOD`;
-            };
-            
-            this.chart.update();
-            
+
+            // Longer ranges are shown per week so the bars stay readable.
+            const bucketSize = days > 90 ? 7 : 1;
+            const buckets = [];
+            for (let i = dayList.length; i > 0; i -= bucketSize) {
+                const slice = dayList.slice(Math.max(0, i - bucketSize), i);
+                const last = slice[slice.length - 1];
+                buckets.unshift({
+                    label: new Date(last.start * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                    value: last.value,
+                    price: last.price * eur,
+                    mined: slice.reduce((sum, d) => sum + d.mined, 0)
+                });
+            }
+
+            this.chart.data.labels = buckets.map(b => b.label);
+            this.chart.data.datasets[0].data = buckets.map(b => b.price);
+            this.chart.data.datasets[1].data = buckets.map(b => b.value);
+            this.chart.data.datasets[2].data = buckets.map(b => b.mined);
+            // Keep the bars in the bottom third so the portfolio line stays readable.
+            this.chart.options.scales.y1.max = Math.ceil(Math.max(...buckets.map(b => b.mined), 1) * 3);
+            this.chart.options.scales.y1.title.text = bucketSize > 1 ? 'GEOD MINED / WEEK' : 'GEOD MINED / DAY';
             this.updateChartVisibility();
-            
             loadingEl.style.display = 'none';
-            
-            const daysWithRewards = transferHistory.filter(d => d.inFlow > 0).length;
-            const avgDaily = daysWithRewards > 0 ? totalInflow / daysWithRewards : 0;
-            
-            if (this.state.price) {
-                summaryEl.innerHTML = `
-                    <div class="tx-summary-item">
-                        <div class="tx-summary-label">TOTAL MINED</div>
-                        <div class="tx-summary-value rewards">${Utils.formatNumber(totalInflow, 2)} GEOD</div>
-                    </div>
-                    <div class="tx-summary-item">
-                        <div class="tx-summary-label">MINING VALUE</div>
-                        <div class="tx-summary-value portfolio">${Utils.formatPrice(totalInflow * this.state.price, 2)}</div>
-                    </div>
-                    <div class="tx-summary-item">
-                        <div class="tx-summary-label">AVG DAILY</div>
-                        <div class="tx-summary-value rewards">${Utils.formatNumber(avgDaily, 2)} GEOD</div>
-                    </div>
-                    <div class="tx-summary-item">
-                        <div class="tx-summary-label">ACTIVE DAYS</div>
-                        <div class="tx-summary-value rewards">${daysWithRewards} / ${days}</div>
-                    </div>
-                    <div class="tx-summary-item">
-                        <div class="tx-summary-label">CURRENT PRICE</div>
-                        <div class="tx-summary-value price">${Utils.formatPrice(this.state.price, 4)}</div>
-                    </div>
-                    <div class="tx-summary-item">
-                        <div class="tx-summary-label">PORTFOLIO</div>
-                        <div class="tx-summary-value portfolio">${Utils.formatPrice(this.state.portfolioValue, 2)}</div>
-                    </div>
-                `;
-            }
-            
+
+            const mined = dayList.reduce((sum, d) => sum + d.mined, 0);
+            const first = dayList[0].value;
+            const last = dayList[dayList.length - 1].value;
+            const change = last - first;
+            const changePct = first ? (change / first) * 100 : 0;
+            const lastReward = entries.find(e => e.kind === 'reward');
+            const sign = change >= 0 ? '+' : '−';
+
+            summaryEl.innerHTML = `
+                <div class="tx-summary-item">
+                    <div class="tx-summary-label">MINED IN PERIOD</div>
+                    <div class="tx-summary-value rewards">${Utils.formatNumber(mined, 0)} GEOD</div>
+                </div>
+                <div class="tx-summary-item">
+                    <div class="tx-summary-label">MINED VALUE TODAY</div>
+                    <div class="tx-summary-value portfolio">€${Utils.formatNumber(mined * (this.state.price || 0) * eur, 0)}</div>
+                </div>
+                <div class="tx-summary-item">
+                    <div class="tx-summary-label">AVERAGE PER DAY</div>
+                    <div class="tx-summary-value rewards">${Utils.formatNumber(mined / days, 1)} GEOD</div>
+                </div>
+                <div class="tx-summary-item">
+                    <div class="tx-summary-label">PORTFOLIO CHANGE</div>
+                    <div class="tx-summary-value ${change >= 0 ? 'rewards' : 'negative'}">${sign}€${Utils.formatNumber(Math.abs(change), 0)} (${Utils.formatChange(changePct)})</div>
+                </div>
+                <div class="tx-summary-item">
+                    <div class="tx-summary-label">LAST PAYOUT</div>
+                    <div class="tx-summary-value rewards">${lastReward ? Utils.timeAgo(lastReward.timestamp) : '--'}</div>
+                </div>
+            `;
         } catch (error) {
             console.error('Failed to load chart data:', error);
             loadingEl.innerHTML = 'Chart data unavailable<br><small style="color: var(--text-muted)">' + error.message + '</small>';
@@ -502,10 +519,10 @@ const App = {
                 return null;
             });
             const solana = await API.getWalletActivity();
-            // Small swaps for Polygon network fees are left out of the list.
-            const entries = [...solana, ...(this.state.polygonActivity || [])]
-                .filter(e => e.kind !== 'gas')
+            this.state.rawEntries = [...solana, ...(this.state.polygonActivity || [])]
                 .sort((a, b) => b.timestamp - a.timestamp);
+            // Small swaps for Polygon network fees are left out of the list.
+            const entries = this.state.rawEntries.filter(e => e.kind !== 'gas');
 
             this.state.mined = entries.filter(e => e.kind === 'reward').reduce((sum, e) => sum + e.geod, 0);
             this.state.minedSince = Math.min(...entries.filter(e => e.kind === 'reward').map(e => e.timestamp));
@@ -548,7 +565,7 @@ const App = {
         const geod = Utils.formatNumber(Math.abs(entry.geod), 2) + ' GEOD';
         const usdc = Utils.formatNumber(Math.abs(entry.usdc), 2) + ' USDC';
         const geodNow = this.state.price
-            ? '≈ $' + Utils.formatNumber(Math.abs(entry.geod) * this.state.price, 2) + ' today'
+            ? '≈ €' + Utils.formatNumber(Math.abs(entry.geod) * this.state.price * (this.state.eurRate || 1), 2) + ' today'
             : '';
 
         const count = entry.payouts?.length > 1 ? entry.payouts.length : 0;

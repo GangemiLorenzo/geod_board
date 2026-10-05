@@ -7,8 +7,8 @@ const CONFIG = {
         { id: 'E831CD30C3BD', location: 'Italy' }
     ],
     investment: {
-        amountEUR: 1840,
-        description: '2 miners × €920'
+        amountEUR: 1765,
+        description: '2 miners (€920 + €845)'
     },
     polygon: {
         // Old wallet, used until the move to Solana on 19 Sep 2025.
