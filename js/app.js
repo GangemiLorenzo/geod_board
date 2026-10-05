@@ -460,7 +460,7 @@ const App = {
     async loadTransactions() {
         this.state.activityLoadedAt = Date.now();
         try {
-            this.state.activity = this.groupRewardsByDay(await API.getWalletActivity());
+            this.state.activity = this.groupRewardRuns(await API.getWalletActivity());
             this.renderTransactions();
         } catch (error) {
             console.error('Failed to load transactions:', error);
@@ -471,25 +471,21 @@ const App = {
         }
     },
 
-    // Collapses each day's mining payouts into a single row so they don't
-    // drown out the buys, sells and transfers.
-    groupRewardsByDay(entries) {
+    // Merges each run of back-to-back mining payouts (nothing else in between)
+    // into one expandable row so they don't drown out buys, sells and transfers.
+    groupRewardRuns(entries) {
         const result = [];
-        const rewardRows = {};
 
         for (const entry of entries) {
-            if (entry.kind !== 'reward') {
-                result.push(entry);
-                continue;
-            }
-            const d = new Date(entry.timestamp * 1000);
-            const day = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-            if (rewardRows[day]) {
-                rewardRows[day].geod += entry.geod;
-                rewardRows[day].count++;
+            const last = result[result.length - 1];
+            if (entry.kind === 'reward' && last?.kind === 'reward') {
+                last.geod += entry.geod;
+                last.payouts.push(entry);
+                last.firstTimestamp = entry.timestamp;
+            } else if (entry.kind === 'reward') {
+                result.push({ ...entry, payouts: [entry], firstTimestamp: entry.timestamp });
             } else {
-                rewardRows[day] = { ...entry, count: 1 };
-                result.push(rewardRows[day]);
+                result.push(entry);
             }
         }
 
@@ -507,7 +503,7 @@ const App = {
             case 'reward':
                 return {
                     title: 'Mining reward',
-                    note: entry.count > 1 ? `${entry.count} payouts` : 'Earned by the miners',
+                    note: entry.payouts?.length > 1 ? `${entry.payouts.length} payouts` : 'Earned by the miners',
                     amount: '+' + geod, sub: geodNow, dir: 'incoming'
                 };
             case 'sell':
@@ -549,25 +545,46 @@ const App = {
             return;
         }
 
+        const formatDay = (timestamp, withYear = true) =>
+            new Date(timestamp * 1000).toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric', ...(withYear && { year: 'numeric' })
+            });
+        const proofLink = (signature) => `
+            <a class="tx-link" href="https://solscan.io/tx/${signature}" target="_blank" rel="noopener"
+               title="See this transaction on the public blockchain">PROOF ↗</a>`;
+
         listEl.innerHTML = entries.slice(0, this.state.activityShown).map(entry => {
             const tx = this.describeTransaction(entry);
-            const date = new Date(entry.timestamp * 1000).toLocaleDateString('en-US', {
-                month: 'short', day: 'numeric', year: 'numeric'
-            });
-            return `
-                <div class="tx-item ${tx.dir}">
-                    <div class="tx-info">
-                        <div class="tx-title">${tx.title}</div>
-                        <div class="tx-date">${date} · ${tx.note}</div>
-                    </div>
-                    <div class="tx-value">
-                        <div class="tx-amount ${tx.dir === 'outgoing' ? 'negative' : tx.dir === 'incoming' ? 'positive' : ''}">${tx.amount}</div>
-                        <div class="tx-sub">${tx.sub}</div>
-                    </div>
-                    <a class="tx-link" href="https://solscan.io/tx/${entry.signature}" target="_blank" rel="noopener"
-                       title="See this transaction on the public blockchain">PROOF ↗</a>
+            const isGroup = entry.payouts?.length > 1;
+            const date = isGroup && formatDay(entry.firstTimestamp) !== formatDay(entry.timestamp)
+                ? `${formatDay(entry.firstTimestamp, false)} – ${formatDay(entry.timestamp)}`
+                : formatDay(entry.timestamp);
+            const row = `
+                <div class="tx-info">
+                    <div class="tx-title">${isGroup ? 'Mining rewards' : tx.title}</div>
+                    <div class="tx-date">${date} · ${tx.note}</div>
                 </div>
-            `;
+                <div class="tx-value">
+                    <div class="tx-amount ${tx.dir === 'outgoing' ? 'negative' : tx.dir === 'incoming' ? 'positive' : ''}">${tx.amount}</div>
+                    <div class="tx-sub">${tx.sub}</div>
+                </div>`;
+
+            if (!isGroup) {
+                return `<div class="tx-item ${tx.dir}">${row}${proofLink(entry.signature)}</div>`;
+            }
+
+            const payouts = entry.payouts.map(p => `
+                <div class="tx-payout">
+                    <span class="tx-date">${formatDay(p.timestamp)}</span>
+                    <span class="tx-amount positive">+${Utils.formatNumber(p.geod, 2)} GEOD</span>
+                    ${proofLink(p.signature)}
+                </div>`).join('');
+
+            return `
+                <details class="tx-group">
+                    <summary class="tx-item ${tx.dir}">${row}<span class="tx-link tx-toggle">DETAILS</span></summary>
+                    <div class="tx-payouts">${payouts}</div>
+                </details>`;
         }).join('');
 
         moreEl.hidden = entries.length <= this.state.activityShown;
