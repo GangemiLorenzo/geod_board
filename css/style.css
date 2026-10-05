@@ -81,6 +81,27 @@ body {
     gap: 1.5rem;
 }
 
+.currency-toggle {
+    display: flex;
+    border: 1px solid var(--border-accent);
+}
+
+.currency-toggle button {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.25rem 0.6rem;
+    cursor: pointer;
+}
+
+.currency-toggle button.active {
+    background: var(--accent-primary);
+    color: #000;
+}
+
 .status-indicator {
     display: flex;
     align-items: center;

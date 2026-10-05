@@ -16,6 +16,7 @@ const App = {
             prices: [],
             portfolios: []
         },
+        currency: (() => { try { return localStorage.getItem('currency') || 'USD'; } catch (e) { return 'USD'; } })(),
         activity: [],
         polygonActivity: null,
         rawEntries: null,
@@ -128,6 +129,11 @@ const App = {
             });
         });
 
+        document.querySelectorAll('.currency-toggle button').forEach(btn => {
+            btn.addEventListener('click', () => this.setCurrency(btn.dataset.currency));
+            btn.classList.toggle('active', btn.dataset.currency === this.state.currency);
+        });
+
         document.getElementById('tx-more').addEventListener('click', () => {
             this.state.activityShown += 15;
             this.renderTransactions();
@@ -222,7 +228,7 @@ const App = {
     },
 
     updatePriceUI() {
-        document.getElementById('geod-price').textContent = Utils.formatPrice(this.state.price);
+        document.getElementById('geod-price').textContent = this.money(this.state.price, 4);
         const changeEl = document.getElementById('geod-change');
         changeEl.textContent = Utils.formatChange(this.state.change24h) + ' (24h)';
         changeEl.className = 'card-change ' + (this.state.change24h >= 0 ? 'positive' : 'negative');
@@ -232,12 +238,12 @@ const App = {
         // Deposits (e.g. HNT funds) are a separate pot: shown apart, not in the value.
         const separate = this.separateFunds();
         document.getElementById('portfolio-value').textContent =
-            '$' + Utils.formatNumber(this.state.portfolioValue - separate, 2);
+            this.money(this.state.portfolioValue - separate, 2);
         document.getElementById('geod-balance').textContent = Utils.formatNumber(this.state.geodBalance, 4) + ' GEOD';
         document.getElementById('usdc-balance').textContent =
             Utils.formatNumber(Math.max(this.state.usdcBalance - separate, 0), 2) + ' USDC';
         document.getElementById('separate-funds').textContent = separate
-            ? `+ $${Utils.formatNumber(separate, 0)} fondi ${(CONFIG.investment.deposits || []).map(d => d.source || d.label).join(', ')} a parte`
+            ? `+ ${this.money(separate)} fondi ${(CONFIG.investment.deposits || []).map(d => d.source || d.label).join(', ')} a parte`
             : '';
         this.updateInvestmentUI();
     },
@@ -246,7 +252,7 @@ const App = {
     // miners investment, with its own split between the partners.
     renderDeposits(deposits) {
         const container = document.getElementById('deposits');
-        const usd = (v) => '$' + Utils.formatNumber(v, 0);
+        const usd = (v) => this.money(v);
         const esc = Utils.escapeHtml;
 
         container.innerHTML = deposits.map(d => `
@@ -255,7 +261,8 @@ const App = {
                 <div class="deposit-row">
                     <div>
                         <div class="investment-value">${usd(d.amountUSD)}</div>
-                        <div class="investment-label">in USDC nel wallet</div>
+                        <div class="investment-label">${this.currency() === 'EUR'
+                            ? `= $${Utils.formatNumber(d.amountUSD, 0)} in USDC nel wallet` : 'in USDC nel wallet'}</div>
                     </div>
                     <div class="deposit-split">
                         ${Object.entries(d.split || {}).map(([name, pct]) => `
@@ -279,7 +286,7 @@ const App = {
         const esc = Utils.escapeHtml;
         const depositTotal = deposits.reduce((sum, d) => sum + d.amountUSD, 0);
         const geodSide = Math.max(worth - depositTotal, 0);
-        const usd = (v) => '$' + Utils.formatNumber(v, 0);
+        const usd = (v) => this.money(v);
 
         const rawNames = CONFIG.investment.partners || [];
         const splitOf = (d, escapedName) => d.split?.[rawNames[partners.indexOf(escapedName)]] || 0;
@@ -297,7 +304,7 @@ const App = {
                     <tr>
                         <th></th>
                         <th>GEOD <span class="ownership-pct">(1/${partners.length})</span></th>
-                        ${deposits.map(d => `<th>USD <span class="ownership-pct">(da ${esc(d.source || d.label)})</span></th>`).join('')}
+                        ${deposits.map(d => `<th>${esc(d.source || d.label)}</th>`).join('')}
                         <th>TOTALE OGGI</th>
                     </tr>
                 </thead>
@@ -333,8 +340,39 @@ const App = {
 
         document.getElementById('investment-headline').innerHTML =
             `Negli ultimi 30 giorni i miner hanno guadagnato <strong>${Utils.formatNumber(mined, 0)} GEOD</strong>` +
-            ` (≈ $${Utils.formatNumber(value, 0)}).` +
+            ` (≈ ${this.money(value)}).` +
             (last ? ` <span class="${stale ? 'warn' : ''}">Ultimo pagamento ${Utils.timeAgo(last.timestamp)}.</span>` : '');
+    },
+
+    // Amounts are kept in dollars and converted for display when the viewer
+    // picks euros (at today's USDC → EUR rate).
+    currency() {
+        return this.state.currency === 'EUR' && this.state.eurRate ? 'EUR' : 'USD';
+    },
+
+    rate() {
+        return this.currency() === 'EUR' ? this.state.eurRate : 1;
+    },
+
+    symbol() {
+        return this.currency() === 'EUR' ? '€' : '$';
+    },
+
+    money(usd, decimals = 0) {
+        if (usd === null || usd === undefined || isNaN(usd)) return '--';
+        return this.symbol() + Utils.formatNumber(usd * this.rate(), decimals);
+    },
+
+    setCurrency(currency) {
+        this.state.currency = currency;
+        try { localStorage.setItem('currency', currency); } catch (e) {}
+        document.querySelectorAll('.currency-toggle button').forEach(b =>
+            b.classList.toggle('active', b.dataset.currency === currency));
+        if (this.state.price === null) return;
+        this.updatePriceUI();
+        this.updatePortfolioUI();
+        if (this.state.activity.length) this.renderTransactions();
+        this.loadChartData(this.state.chartDays);
     },
 
     separateFunds() {
@@ -349,7 +387,7 @@ const App = {
                 .toLocaleDateString('it-IT', { month: 'short', year: 'numeric' });
             document.getElementById('investment-mined').innerHTML =
                 `Minati da ${since}: <strong>${Utils.formatNumber(this.state.mined, 0)} GEOD</strong>` +
-                ` (≈ $${Utils.formatNumber(this.state.mined * this.state.price, 0)} al prezzo di oggi)`;
+                ` (≈ ${this.money(this.state.mined * this.state.price)} al prezzo di oggi)`;
         }
 
         // Without investment details in the link only the summary lines show.
@@ -367,12 +405,13 @@ const App = {
         // Deposits (e.g. HNT profits) sit in the wallet but are not part of the
         // miners investment, so they are left out of its value and result.
         const worth = walletValue ? walletValue - depositTotal : null;
-        const usd = (v) => '$' + Utils.formatNumber(v, 0);
+        const usd = (v) => this.money(v);
 
         document.getElementById('invested-value').textContent = invested ? usd(invested) : '--';
         document.getElementById('invested-breakdown').textContent = '';
         document.getElementById('investment-note').textContent =
-            `Soldi messi: ${CONFIG.investment.description || 'i miner'}, convertiti in dollari al cambio di oggi. ` +
+            `Soldi messi: ${CONFIG.investment.description || 'i miner'}` +
+            (this.currency() === 'USD' ? ', convertiti in dollari al cambio di oggi. ' : '. ') +
             `"Valore oggi" sono i GEOD e gli USDC nel wallet ai prezzi di oggi` +
             (depositTotal ? `, esclusi i ${usd(depositTotal)} della scheda sotto` : '') +
             `; i miner stessi non sono conteggiati.`;
@@ -399,7 +438,7 @@ const App = {
         const ctx = document.getElementById('combined-chart').getContext('2d');
         const font = (size) => ({ family: "'JetBrains Mono'", size });
         const grid = { color: 'rgba(42, 42, 42, 0.5)', drawBorder: false };
-        const usd = (v) => '$' + (v >= 1000 ? Utils.formatNumber(v / 1000, 1) + 'k' : Utils.formatNumber(v, v < 10 ? 2 : 0));
+        const usd = (v) => this.symbol() + (v >= 1000 ? Utils.formatNumber(v / 1000, 1) + 'k' : Utils.formatNumber(v, v < 10 ? 2 : 0));
 
         this.chart = new Chart(ctx, {
             type: 'bar',
@@ -465,8 +504,8 @@ const App = {
                         callbacks: {
                             label: (context) => {
                                 const v = context.parsed.y;
-                                if (context.datasetIndex === 0) return `Prezzo GEOD: $${Utils.formatNumber(v, 4)}`;
-                                if (context.datasetIndex === 1) return `Portafoglio: $${Utils.formatNumber(v, 0)}`;
+                                if (context.datasetIndex === 0) return `Prezzo GEOD: ${this.symbol()}${Utils.formatNumber(v, 4)}`;
+                                if (context.datasetIndex === 1) return `Portafoglio: ${this.symbol()}${Utils.formatNumber(v, 0)}`;
                                 return `Minati: +${Utils.formatNumber(v, 2)} GEOD`;
                             }
                         }
@@ -482,7 +521,7 @@ const App = {
                         position: 'left',
                         grid,
                         ticks: { color: '#a855f7', font: font(10), callback: usd },
-                        title: { display: true, text: 'PORTAFOGLIO $', color: '#a855f7', font: font(10) }
+                        title: { display: true, text: 'PORTAFOGLIO', color: '#a855f7', font: font(10) }
                     },
                     y1: {
                         type: 'linear',
@@ -497,8 +536,8 @@ const App = {
                         position: 'right',
                         display: false,
                         grid: { display: false },
-                        ticks: { color: '#ff6b35', font: font(10), callback: (v) => '$' + Utils.formatNumber(v, 2) },
-                        title: { display: true, text: 'PREZZO $', color: '#ff6b35', font: font(10) }
+                        ticks: { color: '#ff6b35', font: font(10), callback: (v) => this.symbol() + Utils.formatNumber(v, 2) },
+                        title: { display: true, text: 'PREZZO', color: '#ff6b35', font: font(10) }
                     }
                 }
             }
@@ -583,8 +622,8 @@ const App = {
                 const last = slice[slice.length - 1];
                 buckets.unshift({
                     label: new Date(last.start * 1000).toLocaleDateString('it-IT', { month: 'short', day: 'numeric' }),
-                    value: last.value,
-                    price: last.price,
+                    value: last.value * this.rate(),
+                    price: last.price * this.rate(),
                     mined: slice.reduce((sum, d) => sum + d.mined, 0)
                 });
             }
@@ -614,7 +653,7 @@ const App = {
                 </div>
                 <div class="tx-summary-item">
                     <div class="tx-summary-label">VALORE OGGI</div>
-                    <div class="tx-summary-value portfolio">$${Utils.formatNumber(mined * (this.state.price || 0), 0)}</div>
+                    <div class="tx-summary-value portfolio">${this.money(mined * (this.state.price || 0))}</div>
                 </div>
                 <div class="tx-summary-item">
                     <div class="tx-summary-label">MEDIA AL GIORNO</div>
@@ -622,7 +661,7 @@ const App = {
                 </div>
                 <div class="tx-summary-item">
                     <div class="tx-summary-label">VARIAZIONE PORTAFOGLIO</div>
-                    <div class="tx-summary-value ${change >= 0 ? 'rewards' : 'negative'}">${sign}$${Utils.formatNumber(Math.abs(change), 0)} (${Utils.formatChange(changePct)})</div>
+                    <div class="tx-summary-value ${change >= 0 ? 'rewards' : 'negative'}">${sign}${this.money(Math.abs(change))} (${Utils.formatChange(changePct)})</div>
                 </div>
                 <div class="tx-summary-item">
                     <div class="tx-summary-label">ULTIMO PAGAMENTO</div>
@@ -696,7 +735,7 @@ const App = {
         const geod = Utils.formatNumber(Math.abs(entry.geod), 2) + ' GEOD';
         const usdc = Utils.formatNumber(Math.abs(entry.usdc), 2) + ' USDC';
         const geodNow = this.state.price
-            ? '≈ $' + Utils.formatNumber(Math.abs(entry.geod) * this.state.price, 2) + ' oggi'
+            ? '≈ ' + this.money(Math.abs(entry.geod) * this.state.price, 2) + ' oggi'
             : '';
 
         const count = entry.payouts?.length > 1 ? entry.payouts.length : 0;
