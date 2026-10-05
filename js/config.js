@@ -16,6 +16,7 @@ const CONFIG = {
             // is labelled as this deposit in the transactions list.
             {
                 label: 'Da profitti HNT',
+                source: 'HNT',
                 amountUSD: 1155,
                 chain: 'solana',
                 // Percentages of this amount owned by each partner.

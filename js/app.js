@@ -233,7 +233,7 @@ const App = {
                     <tr>
                         <th></th>
                         <th>GEOD <span class="ownership-pct">(1/${partners.length})</span></th>
-                        ${deposits.map(d => `<th>${d.label.replace(/^Da profitti /, '')}</th>`).join('')}
+                        ${deposits.map(d => `<th>USD <span class="ownership-pct">(da ${d.source})</span></th>`).join('')}
                         <th>TOTALE OGGI</th>
                     </tr>
                 </thead>
@@ -249,7 +249,7 @@ const App = {
             </table>`;
 
         document.getElementById('ownership-note').textContent =
-            deposits.map(d => `${d.label}: i ${usd(d.amountUSD)} sono divisi ` +
+            deposits.map(d => `I ${usd(d.amountUSD)} arrivati dai profitti ${d.source} (ora in USDC nel wallet) sono divisi ` +
                 Object.entries(d.split || {}).map(([n, p]) => `${n} ${p}%`).join(', ') + '. ').join('') +
             `Il resto del valore di oggi (${usd(geodSide)}) è diviso in parti uguali.`;
         document.getElementById('ownership-card').hidden = false;
@@ -291,7 +291,7 @@ const App = {
             : '';
         document.getElementById('investment-note').textContent =
             `Miner: ${CONFIG.investment.description}, convertiti in dollari al cambio di oggi. ` +
-            deposits.map(d => `${d.label}: dollari aggiunti da un altro wallet. `).join('') +
+            deposits.map(d => `${d.label}: dollari (USDC) aggiunti da un altro wallet. `).join('') +
             `"Valore oggi" sono i GEOD e gli USDC nel wallet ai prezzi di oggi; i miner stessi non sono conteggiati.`;
 
         if (!worth || !invested) return;
