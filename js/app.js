@@ -17,6 +17,9 @@ const App = {
             portfolios: []
         },
         activity: [],
+        polygonActivity: null,
+        mined: null,
+        minedSince: null,
         activityShown: 15,
         activityLoadedAt: 0,
         isLoading: false,
@@ -200,6 +203,39 @@ const App = {
         if (this.state.portfolioValueEUR) {
             eurEl.textContent = '≈ ' + Utils.formatNumber(this.state.portfolioValueEUR, 2) + ' EUR';
         }
+        this.updateInvestmentUI();
+    },
+
+    updateInvestmentUI() {
+        const invested = CONFIG.investment.amountEUR;
+        const worth = this.state.portfolioValueEUR;
+        const euro = (v) => '€' + Utils.formatNumber(v, 0);
+
+        document.getElementById('invested-value').textContent = euro(invested);
+        document.getElementById('investment-note').textContent =
+            `${CONFIG.investment.description}. "Worth today" is the GEOD and USDC in the wallet at today's prices; the miners themselves are not counted.`;
+
+        if (!worth) return;
+
+        if (this.state.mined && this.state.price) {
+            const eurPerUsd = worth / this.state.portfolioValue;
+            const since = new Date(this.state.minedSince * 1000)
+                .toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+            document.getElementById('investment-mined').innerHTML =
+                `Mined since ${since}: <strong>${Utils.formatNumber(this.state.mined, 0)} GEOD</strong>` +
+                ` (≈ ${euro(this.state.mined * this.state.price * eurPerUsd)} at today's price)`;
+        }
+
+        const result = worth - invested;
+        const percent = (result / invested) * 100;
+        const resultEl = document.getElementById('result-value');
+        const percentEl = document.getElementById('result-percent');
+
+        document.getElementById('worth-value').textContent = euro(worth);
+        resultEl.textContent = (result >= 0 ? '+' : '−') + euro(Math.abs(result));
+        resultEl.className = 'investment-value ' + (result >= 0 ? 'positive' : 'negative');
+        percentEl.textContent = Utils.formatChange(percent);
+        percentEl.className = 'card-change ' + (result >= 0 ? 'positive' : 'negative');
     },
 
     initChart() {
@@ -460,8 +496,22 @@ const App = {
     async loadTransactions() {
         this.state.activityLoadedAt = Date.now();
         try {
-            this.state.activity = this.groupRewardRuns(await API.getWalletActivity());
+            // The Polygon history never changes, so it is only loaded once.
+            this.state.polygonActivity ??= await API.getPolygonActivity().catch(error => {
+                console.error('Polygon history unavailable:', error);
+                return null;
+            });
+            const solana = await API.getWalletActivity();
+            // Small swaps for Polygon network fees are left out of the list.
+            const entries = [...solana, ...(this.state.polygonActivity || [])]
+                .filter(e => e.kind !== 'gas')
+                .sort((a, b) => b.timestamp - a.timestamp);
+
+            this.state.mined = entries.filter(e => e.kind === 'reward').reduce((sum, e) => sum + e.geod, 0);
+            this.state.minedSince = Math.min(...entries.filter(e => e.kind === 'reward').map(e => e.timestamp));
+            this.state.activity = this.groupRuns(entries);
             this.renderTransactions();
+            this.updateInvestmentUI();
         } catch (error) {
             console.error('Failed to load transactions:', error);
             if (this.state.activity.length === 0) {
@@ -471,21 +521,23 @@ const App = {
         }
     },
 
-    // Merges each run of back-to-back mining payouts (nothing else in between)
-    // into one expandable row so they don't drown out buys, sells and transfers.
-    groupRewardRuns(entries) {
+    // Merges back-to-back entries of the same kind (mining payouts, the
+    // transfers of the move to Solana) into one expandable row so they don't
+    // drown out buys, sells and transfers.
+    groupRuns(entries) {
+        const groupable = ['reward', 'migrate-out', 'migrate-in'];
         const result = [];
 
         for (const entry of entries) {
             const last = result[result.length - 1];
-            if (entry.kind === 'reward' && last?.kind === 'reward') {
+            if (!groupable.includes(entry.kind)) {
+                result.push(entry);
+            } else if (last?.kind === entry.kind && last.chain === entry.chain) {
                 last.geod += entry.geod;
                 last.payouts.push(entry);
                 last.firstTimestamp = entry.timestamp;
-            } else if (entry.kind === 'reward') {
-                result.push({ ...entry, payouts: [entry], firstTimestamp: entry.timestamp });
             } else {
-                result.push(entry);
+                result.push({ ...entry, payouts: [entry], firstTimestamp: entry.timestamp });
             }
         }
 
@@ -496,15 +548,29 @@ const App = {
         const geod = Utils.formatNumber(Math.abs(entry.geod), 2) + ' GEOD';
         const usdc = Utils.formatNumber(Math.abs(entry.usdc), 2) + ' USDC';
         const geodNow = this.state.price
-            ? '≈ ' + Utils.formatPrice(Math.abs(entry.geod) * this.state.price, 2) + ' today'
+            ? '≈ $' + Utils.formatNumber(Math.abs(entry.geod) * this.state.price, 2) + ' today'
             : '';
+
+        const count = entry.payouts?.length > 1 ? entry.payouts.length : 0;
 
         switch (entry.kind) {
             case 'reward':
                 return {
-                    title: 'Mining reward',
-                    note: entry.payouts?.length > 1 ? `${entry.payouts.length} payouts` : 'Earned by the miners',
+                    title: count ? 'Mining rewards' : 'Mining reward',
+                    note: count ? `${count} payouts` : 'Earned by the miners',
                     amount: '+' + geod, sub: geodNow, dir: 'incoming'
+                };
+            case 'migrate-out':
+                return {
+                    title: 'Moved to Solana',
+                    note: (count ? `${count} transfers` : 'Sent') + ' to the GEODNET bridge',
+                    amount: '-' + geod, sub: '', dir: 'swap'
+                };
+            case 'migrate-in':
+                return {
+                    title: 'Arrived on Solana',
+                    note: (count ? `${count} transfers` : 'Received') + ' from the old Polygon wallet',
+                    amount: '+' + geod, sub: '', dir: 'swap'
                 };
             case 'sell':
                 return {
@@ -536,8 +602,11 @@ const App = {
         const moreEl = document.getElementById('tx-more');
         const entries = this.state.activity;
 
-        document.getElementById('tx-count').textContent =
-            entries.length ? `LATEST ${entries.length}` : '';
+        const oldest = entries[entries.length - 1];
+        document.getElementById('tx-count').textContent = oldest
+            ? 'SINCE ' + new Date((oldest.firstTimestamp || oldest.timestamp) * 1000)
+                .toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase()
+            : '';
 
         if (entries.length === 0) {
             listEl.innerHTML = '<div class="tx-empty">No transactions yet</div>';
@@ -549,19 +618,22 @@ const App = {
             new Date(timestamp * 1000).toLocaleDateString('en-US', {
                 month: 'short', day: 'numeric', ...(withYear && { year: 'numeric' })
             });
-        const proofLink = (signature) => `
-            <a class="tx-link" href="https://solscan.io/tx/${signature}" target="_blank" rel="noopener"
+        const explorer = { solana: 'https://solscan.io/tx/', polygon: 'https://polygonscan.com/tx/' };
+        const proofLink = (chain, signature) => `
+            <a class="tx-link" href="${explorer[chain]}${signature}" target="_blank" rel="noopener"
                title="See this transaction on the public blockchain">PROOF ↗</a>`;
 
         listEl.innerHTML = entries.slice(0, this.state.activityShown).map(entry => {
             const tx = this.describeTransaction(entry);
             const isGroup = entry.payouts?.length > 1;
+            const sameYear = new Date(entry.firstTimestamp * 1000).getFullYear() ===
+                new Date(entry.timestamp * 1000).getFullYear();
             const date = isGroup && formatDay(entry.firstTimestamp) !== formatDay(entry.timestamp)
-                ? `${formatDay(entry.firstTimestamp, false)} – ${formatDay(entry.timestamp)}`
+                ? `${formatDay(entry.firstTimestamp, !sameYear)} – ${formatDay(entry.timestamp)}`
                 : formatDay(entry.timestamp);
             const row = `
                 <div class="tx-info">
-                    <div class="tx-title">${isGroup ? 'Mining rewards' : tx.title}</div>
+                    <div class="tx-title">${tx.title}${entry.chain === 'polygon' ? '<span class="tx-chain">POLYGON</span>' : ''}</div>
                     <div class="tx-date">${date} · ${tx.note}</div>
                 </div>
                 <div class="tx-value">
@@ -570,14 +642,14 @@ const App = {
                 </div>`;
 
             if (!isGroup) {
-                return `<div class="tx-item ${tx.dir}">${row}${proofLink(entry.signature)}</div>`;
+                return `<div class="tx-item ${tx.dir}">${row}${proofLink(entry.chain, entry.signature)}</div>`;
             }
 
             const payouts = entry.payouts.map(p => `
                 <div class="tx-payout">
                     <span class="tx-date">${formatDay(p.timestamp)}</span>
                     <span class="tx-amount positive">+${Utils.formatNumber(p.geod, 2)} GEOD</span>
-                    ${proofLink(p.signature)}
+                    ${proofLink(p.chain, p.signature)}
                 </div>`).join('');
 
             return `

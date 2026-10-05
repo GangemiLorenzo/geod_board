@@ -182,19 +182,27 @@ const API = {
         return this.getTokenAccount(CONFIG.geodMint);
     },
 
-    async getTokenAccountHistory(mint, limit = 100) {
+    async getTokenAccountHistory(mint, maxPages = 1) {
         const tokenAccount = await this.getTokenAccount(mint);
         if (!tokenAccount) return [];
 
-        return this.fetchJSON(
-            `https://api.helius.xyz/v0/addresses/${tokenAccount}/transactions?api-key=${CONFIG.heliusApiKey}&limit=${limit}`
-        );
+        const txs = [];
+        let before = '';
+        for (let page = 0; page < maxPages; page++) {
+            const batch = await this.fetchJSON(
+                `https://api.helius.xyz/v0/addresses/${tokenAccount}/transactions?api-key=${CONFIG.heliusApiKey}&limit=100${before}`
+            );
+            txs.push(...batch);
+            if (batch.length < 100) break;
+            before = `&before=${batch[batch.length - 1].signature}`;
+        }
+        return txs;
     },
 
-    // Turns raw GEOD/USDC transactions into plain-language activity entries.
+    // Solana wallet: GEOD/USDC transactions as plain-language activity entries.
     async getWalletActivity() {
         const [geodTxs, usdcTxs] = await Promise.all([
-            this.getTokenAccountHistory(CONFIG.geodMint),
+            this.getTokenAccountHistory(CONFIG.geodMint, 10),
             this.getTokenAccountHistory(CONFIG.usdcMint)
         ]);
 
@@ -203,41 +211,94 @@ const API = {
             bySignature.set(tx.signature, tx);
         }
 
-        const entries = [];
-        const geodSenders = {};
-
+        const moves = [];
         for (const tx of bySignature.values()) {
-            let geod = 0;
-            let usdc = 0;
-            let geodFrom = null;
+            const move = { chain: 'solana', signature: tx.signature, timestamp: tx.timestamp,
+                geod: 0, usd: 0, pol: 0, isSwap: tx.type === 'SWAP', geodFrom: null, geodTo: null };
 
             for (const t of tx.tokenTransfers || []) {
                 const sign = t.toUserAccount === CONFIG.wallet ? 1
                     : t.fromUserAccount === CONFIG.wallet ? -1 : 0;
                 if (t.mint === CONFIG.geodMint) {
-                    geod += sign * t.tokenAmount;
-                    if (sign > 0) geodFrom = t.fromUserAccount;
+                    move.geod += sign * t.tokenAmount;
+                    if (sign > 0) move.geodFrom = t.fromUserAccount;
+                    if (sign < 0) move.geodTo = t.toUserAccount;
                 } else if (t.mint === CONFIG.usdcMint) {
-                    usdc += sign * t.tokenAmount;
+                    move.usd += sign * t.tokenAmount;
                 }
             }
+            moves.push(move);
+        }
 
-            if (geod === 0 && usdc === 0) continue;
+        return this.classifyMoves(moves);
+    },
 
-            const isSwap = tx.type === 'SWAP' || (geod !== 0 && usdc !== 0);
+    // Old Polygon wallet: read from the snapshot saved by the "Polygon snapshot"
+    // GitHub Action. Only GEOD, dollar stablecoins and POL are considered, which
+    // also hides the spam tokens scammers airdrop to Polygon wallets.
+    async getPolygonActivity() {
+        const snapshot = await this.fetchJSON(CONFIG.polygon.snapshotUrl);
+        const wallet = snapshot.address;
+        const geodContract = CONFIG.polygon.geodContract;
+        const usdContracts = Object.keys(CONFIG.polygon.usdContracts);
+        const byHash = new Map();
+        const moveFor = (hash, timestamp) => {
+            if (!byHash.has(hash)) {
+                byHash.set(hash, { chain: 'polygon', signature: hash, timestamp,
+                    geod: 0, usd: 0, pol: 0, isSwap: false, geodFrom: null, geodTo: null });
+            }
+            return byHash.get(hash);
+        };
+
+        for (const t of snapshot.tokenTransfers) {
+            const isGeod = t.contract === geodContract;
+            if (!isGeod && !usdContracts.includes(t.contract)) continue;
+
+            const sign = t.to === wallet ? 1 : t.from === wallet ? -1 : 0;
+            const amount = sign * Number(t.value) / Math.pow(10, t.decimals);
+            const move = moveFor(t.hash, t.timeStamp);
+            if (isGeod) {
+                move.geod += amount;
+                if (sign > 0) move.geodFrom = t.from;
+                if (sign < 0) move.geodTo = t.to;
+            } else {
+                move.usd += amount;
+            }
+        }
+
+        for (const t of snapshot.nativeTransfers) {
+            if (!t.hash) continue;
+            const sign = t.to === wallet ? 1 : t.from === wallet ? -1 : 0;
+            moveFor(t.hash, t.timeStamp).pol += sign * Number(t.value) / 1e18;
+        }
+
+        return this.classifyMoves([...byHash.values()]);
+    },
+
+    classifyMoves(moves) {
+        const entries = [];
+        const geodSenders = {};
+
+        for (const m of moves) {
+            // Ignore dust (spam "address poisoning" transfers and rounding leftovers).
+            if (Math.abs(m.geod) < 0.01 && Math.abs(m.usd) < 0.1) continue;
+
             let kind;
-            if (geod > 0 && isSwap) kind = 'buy';
-            else if (geod < 0 && isSwap) kind = 'sell';
-            else if (geod > 0) kind = 'geod-in';
-            else if (geod < 0) kind = 'geod-out';
-            else if (isSwap) kind = usdc > 0 ? 'sell' : 'buy';
-            else kind = usdc > 0 ? 'usdc-in' : 'usdc-out';
+            if (m.geod > 0 && (m.usd < 0 || m.isSwap)) kind = 'buy';
+            else if (m.geod < 0 && (m.usd > 0 || m.isSwap)) kind = 'sell';
+            else if (m.geod < 0 && m.geodTo === CONFIG.polygon.bridgeAddress) kind = 'migrate-out';
+            else if (m.geod > 0) kind = 'geod-in';
+            else if (m.geod < 0) kind = 'geod-out';
+            else if (m.usd < 0 && m.pol > 0) kind = 'gas';
+            else if (m.isSwap) kind = m.usd > 0 ? 'sell' : 'buy';
+            else kind = m.usd > 0 ? 'usdc-in' : 'usdc-out';
 
-            if (kind === 'geod-in' && geodFrom) {
-                geodSenders[geodFrom] = (geodSenders[geodFrom] || 0) + 1;
+            if (kind === 'geod-in' && m.geodFrom) {
+                geodSenders[m.geodFrom] = (geodSenders[m.geodFrom] || 0) + 1;
             }
 
-            entries.push({ signature: tx.signature, timestamp: tx.timestamp, kind, geod, usdc, geodFrom });
+            entries.push({ chain: m.chain, signature: m.signature, timestamp: m.timestamp,
+                kind, geod: m.geod, usdc: m.usd, geodFrom: m.geodFrom });
         }
 
         // Mining payouts all come from the same distributor wallet, so the most
@@ -249,6 +310,9 @@ const API = {
         for (const entry of entries) {
             if (entry.kind === 'geod-in' && entry.geodFrom === rewardSender) {
                 entry.kind = 'reward';
+            } else if (entry.kind === 'geod-in' && entry.chain === 'solana' &&
+                Math.abs(entry.timestamp - CONFIG.polygon.migratedAt) < 3 * 86400) {
+                entry.kind = 'migrate-in';
             }
         }
 
