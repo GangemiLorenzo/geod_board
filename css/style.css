@@ -183,6 +183,13 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
+.investment-breakdown {
+    margin-top: 0.25rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
 .investment-value.highlight {
     color: var(--accent-primary);
 }

@@ -9,8 +9,11 @@ const CONFIG = {
     investment: {
         amountEUR: 1765,
         description: '2 miners (€920 + €845)',
-        // Money added later from another wallet.
-        depositsUSD: 1155
+        // Money added later from other sources; shown separately because it
+        // is split between the partners differently from the miners.
+        deposits: [
+            { label: 'From HNT profits', amountUSD: 1155 }
+        ]
     },
     polygon: {
         // Old wallet, used until the move to Solana on 19 Sep 2025.
