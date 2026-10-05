@@ -48,15 +48,35 @@ for (const source of sources) {
             ...txs.filter(t => t.value !== '0' && t.isError !== '1')
                 .map(t => ({ hash: t.hash, timeStamp: +t.timeStamp, from: t.from, to: t.to, value: t.value })),
             ...internal.filter(t => t.value !== '0' && t.isError !== '1')
-                .map(t => ({ hash: t.hash, timeStamp: +t.timeStamp, from: t.from, to: t.to, value: t.value }))
+                .map(t => ({ hash: t.hash || t.transactionHash, timeStamp: +t.timeStamp, from: t.from, to: t.to, value: t.value, internal: true }))
         ];
+
+        // Pages can overlap, so drop repeated log entries.
+        const seen = new Set();
+        const uniqueTokens = tokens.filter(t => {
+            const key = `${t.hash}:${t.logIndex}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+
+        const balances = {};
+        for (const contract of [...new Set(uniqueTokens.map(t => t.contractAddress.toLowerCase()))]) {
+            const res = await fetch(`${source.url}module=account&action=tokenbalance&contractaddress=${contract}&address=${address}`);
+            const body = await res.json();
+            if (body.status === '1' && body.result !== '0') balances[contract] = body.result;
+        }
+        const polRes = await (await fetch(`${source.url}module=account&action=balance&address=${address}`)).json();
+        if (polRes.status === '1') balances.native = polRes.result;
 
         snapshot = {
             address,
             source: source.name,
             fetchedAt: new Date().toISOString(),
-            tokenTransfers: tokens.map(t => ({
+            balances,
+            tokenTransfers: uniqueTokens.map(t => ({
                 hash: t.hash,
+                logIndex: +t.logIndex,
                 timeStamp: +t.timeStamp,
                 from: t.from,
                 to: t.to,
@@ -67,7 +87,7 @@ for (const source of sources) {
             })),
             nativeTransfers: native
         };
-        console.log(`${source.name}: ${tokens.length} token transfers, ${native.length} POL transfers`);
+        console.log(`${source.name}: ${uniqueTokens.length} token transfers, ${native.length} POL transfers`);
         break;
     } catch (error) {
         console.error(error.message);
