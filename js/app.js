@@ -235,15 +235,14 @@ const App = {
     },
 
     updatePortfolioUI() {
-        // Deposits (e.g. HNT funds) are a separate pot: shown apart, not in the value.
+        // The whole wallet, separate funds (e.g. HNT) included; they are only
+        // left out of the investment, its result and the chart.
         const separate = this.separateFunds();
-        document.getElementById('portfolio-value').textContent =
-            this.money(this.state.portfolioValue - separate, 2);
+        document.getElementById('portfolio-value').textContent = this.money(this.state.portfolioValue, 2);
         document.getElementById('geod-balance').textContent = Utils.formatNumber(this.state.geodBalance, 4) + ' GEOD';
-        document.getElementById('usdc-balance').textContent =
-            Utils.formatNumber(Math.max(this.state.usdcBalance - separate, 0), 2) + ' USDC';
+        document.getElementById('usdc-balance').textContent = Utils.formatNumber(this.state.usdcBalance, 2) + ' USDC';
         document.getElementById('separate-funds').textContent = separate
-            ? `+ ${this.money(separate)} fondi ${(CONFIG.investment.deposits || []).map(d => d.source || d.label).join(', ')} a parte`
+            ? `di cui ${this.money(separate)} fondi ${(CONFIG.investment.deposits || []).map(d => d.source || d.label).join(', ')}`
             : '';
         this.updateInvestmentUI();
     },
